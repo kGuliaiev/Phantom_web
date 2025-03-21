@@ -98,7 +98,16 @@ export class CryptoManager {
   }
 
   async decryptMessage(encryptedBase64) {
-    const encrypted = atob(encryptedBase64);
+    
+    const isBase64 = (str) => {
+      try {
+          return btoa(atob(str)) === str;
+      } catch (err) {
+          return false;
+      }
+  };
+  console.log("🔎 Base64 строка перед декодированием:", base64String);
+  const binaryData = isBase64(base64String) ? atob(base64String) : base64String;
     const iv = new Uint8Array([...encrypted].slice(0, 12).map(c => c.charCodeAt(0)));
     const data = new Uint8Array([...encrypted].slice(12).map(c => c.charCodeAt(0)));
 
