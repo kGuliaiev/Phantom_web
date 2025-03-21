@@ -43,17 +43,19 @@ function App() {
   };
 
   const loginUser = async () => {
-    const hashedPassword = await crypto.hashPassword(password);
     const res = await fetch(`${API.validateUserURL}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId, password: hashedPassword })
+      body: JSON.stringify({ username: userId, password })
     });
     const result = await res.json();
-
-    if (result.success) {
+  
+    if (result.token) {
+      localStorage.setItem('token', result.token);
       setLoggedIn(true);
       fetchChats();
+    } else {
+      alert(result.message || "Ошибка входа");
     }
   };
 
