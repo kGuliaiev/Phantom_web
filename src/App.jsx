@@ -3,21 +3,19 @@ import React, { useEffect, useState } from 'react';
 import './App.css';
 import { CryptoManager } from './crypto/CryptoManager';
 import { API } from './config';
-import ChatList from '../components/ChatList';
-import ChatWindow from '../components/ChatWindow';
-import AuthForm from '../components/AuthForm';
+import ChatList from '../components/ChatList.jsx';
+import ChatWindow from '../components/ChatWindow.jsx';
+import AuthForm from '../components/AuthForm.jsx';
 
 function App() {
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
-
   const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatList, setChatList] = useState([]);
-
   const [crypto, setCrypto] = useState(null);
 
   useEffect(() => {
@@ -25,87 +23,133 @@ function App() {
   }, []);
 
   const registerUser = async () => {
-    const { publicKeyBase64, privateKey } = await crypto.generateKeys();
-    const hashedPassword = await crypto.hashPassword(password);
+    if (!crypto) return alert("CryptoManager не инициализирован");
 
-    await fetch(`${API.registerUserURL}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId,
-        password: hashedPassword,
-        publicKey: publicKeyBase64,
-      })
-    });
+    const identityKeyPair = await crypto.generateIdentityKeyPair();
+    const signedPreKey = await crypto.generateSignedPreKey(identityKeyPair.privateKey);
+    const oneTimePreKeys = await crypto.generateOneTimePreKeys(10);
+    const identifier = `id_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
-    localStorage.setItem('privateKey', privateKey);
-    setLoggedIn(true);
-  };
+    const payload = {
+        username: userId,
+        password: password,
+        identifier: identifier,
+        publicKey: identityKeyPair.publicKey,
+        identityKey: identityKeyPair.publicKey,
+        signedPreKey: signedPreKey,
+        oneTimePreKeys: oneTimePreKeys
+    };
+
+    console.log("📤 Отправка данных на сервер:", payload);
+
+    try {
+        const response = await fetch(`${API.registerUserURL}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        console.log("📥 Ответ от сервера:", result);
+
+        if (response.ok) {
+            console.log("✅ Регистрация успешна");
+            localStorage.setItem("privateKey", identityKeyPair.privateKey);
+            setLoggedIn(true);
+            fetchChats();
+        } else {
+            alert(result.message || "Ошибка регистрации");
+        }
+    } catch (err) {
+        console.error("❗ Ошибка при регистрации:", err);
+        alert("Ошибка при подключении к серверу");
+    }
+};
 
   const loginUser = async () => {
-    const res = await fetch(`${API.validateUserURL}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: userId, password })
-    });
-    const result = await res.json();
-  
-    if (result.token) {
-      localStorage.setItem('token', result.token);
-      setLoggedIn(true);
-      fetchChats();
-    } else {
-      alert(result.message || "Ошибка входа");
+    try {
+      const res = await fetch(`${API.validateUserURL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: userId, password })
+      });
+
+      const result = await res.json();
+
+      if (res.ok) {
+        setLoggedIn(true);
+        fetchChats();
+      } else {
+        alert(result.message || 'Ошибка входа');
+      }
+    } catch (err) {
+      alert("Ошибка при подключении к серверу");
     }
   };
 
   const fetchChats = async () => {
-    const res = await fetch(`${API.usersListURL}`);
-    const users = await res.json();
-    const filtered = users.filter(u => u.userId !== userId);
-    setChatList(filtered);
+    try {
+      const res = await fetch(`${API.usersListURL}`);
+      const users = await res.json();
+      const filtered = users.filter(u => u.username !== userId);
+      setChatList(filtered);
+    } catch (err) {
+      console.error("Ошибка загрузки чатов:", err);
+    }
   };
 
   const selectChat = async (receiver) => {
     setSelectedChat(receiver);
-    const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
-    const messages = await res.json();
+    try {
+      const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
+      const messages = await res.json();
 
-    const relevantMessages = messages.filter(
-      m => m.senderId === receiver.userId || m.receiverId === receiver.userId
-    );
+      const relevantMessages = messages.filter(
+        (m) => m.senderId === receiver.username || m.receiverId === receiver.username
+      );
 
-    const decryptedMessages = await Promise.all(relevantMessages.map(async msg => {
-      try {
-        const decrypted = await crypto.decryptMessage(msg.text);
-        return `${msg.senderId}: ${decrypted}`;
-      } catch (e) {
-        return `${msg.senderId}: [Ошибка дешифрования]`;
-      }
-    }));
+      const decryptedMessages = await Promise.all(
+        relevantMessages.map(async (msg) => {
+          try {
+            const decrypted = await crypto.decryptMessage(msg.text);
+            return `${msg.senderId}: ${decrypted}`;
+          } catch (e) {
+            return `${msg.senderId}: [Ошибка дешифрования]`;
+          }
+        })
+      );
 
-    setChatMessages(decryptedMessages);
+      setChatMessages(decryptedMessages);
+    } catch (err) {
+      console.error("Ошибка загрузки сообщений:", err);
+    }
   };
 
   const sendMessage = async () => {
-    const receiverId = selectedChat.userId;
-    const receiverPublicKeyRes = await fetch(`${API.checkUserURL}?userId=${receiverId}`);
-    const { publicKey: receiverPubKey } = await receiverPublicKeyRes.json();
+    if (!selectedChat) return;
+    
+    try {
+      const receiverId = selectedChat.username;
+      const receiverPublicKeyRes = await fetch(`${API.checkUserURL}?userId=${receiverId}`);
+      const { publicKey: receiverPubKey } = await receiverPublicKeyRes.json();
 
-    const encrypted = await crypto.encryptMessage(receiverPubKey, message);
+      const encrypted = await crypto.encryptMessage(receiverPubKey, message);
 
-    await fetch(`${API.sendMessageURL}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        senderId: userId,
-        receiverId,
-        text: encrypted,
-      })
-    });
+      await fetch(`${API.sendMessageURL}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: userId,
+          receiverId,
+          text: encrypted
+        })
+      });
 
-    setMessage('');
-    selectChat(selectedChat);
+      setMessage('');
+      selectChat(selectedChat);
+    } catch (err) {
+      console.error("Ошибка отправки сообщения:", err);
+    }
   };
 
   if (!crypto) return <div>Загрузка криптографии...</div>;

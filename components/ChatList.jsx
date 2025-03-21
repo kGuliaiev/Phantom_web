@@ -1,4 +1,4 @@
-// Файл: src/components/ChatList.jsx
+// Файл: /components/ChatList.jsx
 import React from 'react';
 
 export default function ChatList({ chats, onSelect }) {
