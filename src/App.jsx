@@ -1,16 +1,16 @@
-// Файл: src/App.jsx
+// Обновлённый App.jsx с AuthTabs
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import { CryptoManager } from './crypto/CryptoManager';
 import { API } from './config';
 import ChatList from '../components/ChatList.jsx';
 import ChatWindow from '../components/ChatWindow.jsx';
-import AuthForm from '../components/AuthForm.jsx';
+import AddContactForm from '../components/AddContactForm';
+import ContactList from '../components/ContactList';
+import AuthTabs from '../components/AuthTabs';
 
 function App() {
   const [userId, setUserId] = useState('');
-  const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
   const [loggedIn, setLoggedIn] = useState(false);
   const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
@@ -20,71 +20,17 @@ function App() {
 
   useEffect(() => {
     setCrypto(new CryptoManager());
+    const savedUser = localStorage.getItem('phantom_username');
+    if (savedUser) {
+      setUserId(savedUser);
+    }
   }, []);
 
-  const registerUser = async () => {
-    if (!crypto) return alert("CryptoManager не инициализирован");
-
-    const identityKeyPair = await crypto.generateIdentityKeyPair();
-    const signedPreKey = await crypto.generateSignedPreKey(identityKeyPair.privateKey);
-    const oneTimePreKeys = await crypto.generateOneTimePreKeys(10);
-    const identifier = `id_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-
-    const payload = {
-        username: userId,
-        password: password,
-        identifier: identifier,
-        publicKey: identityKeyPair.publicKey,
-        identityKey: identityKeyPair.publicKey,
-        signedPreKey: signedPreKey,
-        oneTimePreKeys: oneTimePreKeys
-    };
-
-    console.log("📤 Отправка данных на сервер:", payload);
-
-    try {
-        const response = await fetch(`${API.registerUserURL}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
-
-        const result = await response.json();
-        console.log("📥 Ответ от сервера:", result);
-
-        if (response.ok) {
-            console.log("✅ Регистрация успешна");
-            localStorage.setItem("privateKey", identityKeyPair.privateKey);
-            setLoggedIn(true);
-            fetchChats();
-        } else {
-            alert(result.message || "Ошибка регистрации");
-        }
-    } catch (err) {
-        console.error("❗ Ошибка при регистрации:", err);
-        alert("Ошибка при подключении к серверу");
-    }
-};
-
-  const loginUser = async () => {
-    try {
-      const res = await fetch(`${API.validateUserURL}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: userId, password })
-      });
-
-      const result = await res.json();
-
-      if (res.ok) {
-        setLoggedIn(true);
-        fetchChats();
-      } else {
-        alert(result.message || 'Ошибка входа');
-      }
-    } catch (err) {
-      alert("Ошибка при подключении к серверу");
-    }
+  const handleAuthSuccess = () => {
+    const savedUser = localStorage.getItem('phantom_username');
+    if (savedUser) setUserId(savedUser);
+    setLoggedIn(true);
+    fetchChats();
   };
 
   const fetchChats = async () => {
@@ -103,11 +49,9 @@ function App() {
     try {
       const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
       const messages = await res.json();
-
       const relevantMessages = messages.filter(
         (m) => m.senderId === receiver.username || m.receiverId === receiver.username
       );
-
       const decryptedMessages = await Promise.all(
         relevantMessages.map(async (msg) => {
           try {
@@ -118,7 +62,6 @@ function App() {
           }
         })
       );
-
       setChatMessages(decryptedMessages);
     } catch (err) {
       console.error("Ошибка загрузки сообщений:", err);
@@ -127,14 +70,11 @@ function App() {
 
   const sendMessage = async () => {
     if (!selectedChat) return;
-    
     try {
       const receiverId = selectedChat.username;
       const receiverPublicKeyRes = await fetch(`${API.checkUserURL}?userId=${receiverId}`);
       const { publicKey: receiverPubKey } = await receiverPublicKeyRes.json();
-
       const encrypted = await crypto.encryptMessage(receiverPubKey, message);
-
       await fetch(`${API.sendMessageURL}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -144,7 +84,6 @@ function App() {
           text: encrypted
         })
       });
-
       setMessage('');
       selectChat(selectedChat);
     } catch (err) {
@@ -157,26 +96,22 @@ function App() {
   return (
     <div className="App">
       {!loggedIn ? (
-        <AuthForm
-          isRegistering={isRegistering}
-          userId={userId}
-          password={password}
-          onUserIdChange={setUserId}
-          onPasswordChange={setPassword}
-          onRegister={registerUser}
-          onLogin={loginUser}
-          toggleMode={() => setIsRegistering(prev => !prev)}
-        />
+        <AuthTabs onSuccess={handleAuthSuccess} />
       ) : (
         <div className="messenger">
+          <h2>Добро пожаловать, {userId}</h2>
+          <AddContactForm currentUser={userId} onContactAdded={fetchChats} />
+          <ContactList currentUser={userId} onStartChat={(id) => setSelectedChat({ userId: id })} />
           <ChatList chats={chatList} onSelect={selectChat} />
-          <ChatWindow
-            selectedChat={selectedChat}
-            messages={chatMessages}
-            message={message}
-            onMessageChange={setMessage}
-            onSend={sendMessage}
-          />
+          {selectedChat && (
+            <ChatWindow
+              selectedChat={selectedChat}
+              messages={chatMessages}
+              message={message}
+              onMessageChange={setMessage}
+              onSend={sendMessage}
+            />
+          )}
         </div>
       )}
     </div>
