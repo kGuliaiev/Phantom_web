@@ -1,53 +1,96 @@
-// Обновлённый CryptoManager.js (объединён с логикой сохранения в IndexedDB)
+// CryptoManager.js (обновлённая версия с генерацией реальных ключей и логированием)
 import { saveEncryptedKey, loadEncryptedKey } from './KeyStorageManager';
 
 export class CryptoManager {
   async generateIdentityKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey(
       {
-        name: 'ECDH',
+        name: 'ECDSA',
         namedCurve: 'P-256'
       },
       true,
-      ['deriveBits', 'deriveKey']
+      ['sign', 'verify']
     );
-
+  
     const publicKey = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
     const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
     const privateKeyJwk = await window.crypto.subtle.exportKey('jwk', keyPair.privateKey);
-
+  
+    this._log('✅ Сгенерирована identityKey пара (ECDSA)');
+  
     return {
       publicKey: publicKeyBase64,
       privateKey: JSON.stringify(privateKeyJwk)
     };
   }
 
-  async generateSignedPreKey(privateKeyJwk) {
-    const key = await window.crypto.subtle.importKey(
-      'jwk',
-      JSON.parse(privateKeyJwk),
-      { name: 'ECDH', namedCurve: 'P-256' },
-      false,
-      ['deriveBits', 'deriveKey']
+  async generateSignedPreKey(identityPrivateKeyJwk) {
+    const keyPair = await window.crypto.subtle.generateKey(
+      {
+        name: 'ECDSA',
+        namedCurve: 'P-256'
+      },
+      true,
+      ['sign', 'verify']
     );
 
-    const derived = await window.crypto.subtle.deriveBits(
-      {
-        name: 'ECDH',
-        public: await this.importReceiverKey(this.staticReceiverPublicKey())
-      },
-      key,
-      256
+    const publicKeySpki = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
+    const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeySpki)));
+    const privateKeyJwk = await window.crypto.subtle.exportKey('jwk', keyPair.privateKey);
+
+    const identityPrivateKey = await window.crypto.subtle.importKey(
+      'jwk',
+      JSON.parse(identityPrivateKeyJwk),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['sign']
     );
-    return btoa(String.fromCharCode(...new Uint8Array(derived.slice(0, 32))));
+
+    const signatureBuffer = await window.crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      identityPrivateKey,
+      publicKeySpki
+    );
+    const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+
+    this._log('✅ Сгенерирован signedPreKey и подписан identityPrivateKey');
+
+    return {
+      keyId: Math.floor(Math.random() * 1e6),
+      publicKey: publicKeyBase64,
+      privateKey: JSON.stringify(privateKeyJwk),
+      signature: signatureBase64,
+      createdAt: Date.now()
+    };
   }
 
   async generateOneTimePreKeys(count = 10) {
     const preKeys = [];
+
     for (let i = 0; i < count; i++) {
-      const { publicKey } = await this.generateIdentityKeyPair();
-      preKeys.push(publicKey);
+      const keyPair = await window.crypto.subtle.generateKey(
+        {
+          name: 'ECDH',
+          namedCurve: 'P-256'
+        },
+        true,
+        ['deriveBits', 'deriveKey']
+      );
+
+      const publicKey = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
+      const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKey)));
+      const privateKeyJwk = await window.crypto.subtle.exportKey('jwk', keyPair.privateKey);
+
+      preKeys.push({
+        keyId: Math.floor(Math.random() * 1e6),
+        publicKey: publicKeyBase64,
+        privateKey: JSON.stringify(privateKeyJwk),
+        createdAt: Date.now()
+      });
     }
+
+    this._log(`✅ Сгенерировано ${count} одноразовых preKeys`);
+
     return preKeys;
   }
 
@@ -63,7 +106,7 @@ export class CryptoManager {
         []
       );
     } catch (error) {
-      console.error("❌ Ошибка при декодировании ключа в importReceiverKey:", error, base64Key);
+      this._log(`❌ Ошибка importReceiverKey: ${error}`);
       throw error;
     }
   }
@@ -192,8 +235,9 @@ export class CryptoManager {
     return await this.decryptPrivateKey(encrypted, hashPassword);
   }
 
-  staticReceiverPublicKey() {
-    return "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEwEXAMPLE_STATIC_KEY==";
+  _log(message) {
+    const now = new Date().toISOString();
+    const ip = 'n/a'; // можно вставить IP из WebRTC или сервера при расширении
+    console.log(`[${now}] [CryptoManager] [IP: ${ip}] ${message}`);
   }
 }
-// Обновлённый KeyStorageManager.js (объединён с логикой работы с IndexedDB)

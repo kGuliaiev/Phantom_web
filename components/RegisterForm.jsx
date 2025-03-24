@@ -29,14 +29,63 @@ const RegisterForm = ({ onSuccess }) => {
       if (!identifier) throw new Error('Идентификатор не найден');
 
       const payload = {
-        username,
+        login: username,
         password: hashedPassword,
         identifier,
         publicKey: identityKeyPair.publicKey,
         identityKey: identityKeyPair.publicKey,
         signedPreKey,
         oneTimePreKeys
-      };
+      }
+
+console.log("🚀 Payload отправки на сервер:", payload);
+
+function validateRegisterPayload(payload) {
+  const requiredFields = ['login', 'passwordHash', 'identifier', 'identityKey', 'signedPreKey', 'oneTimePreKeys'];
+  for (const field of requiredFields) {
+    if (!payload[field]) {
+      console.error(`❌ Отсутствует поле: ${field}`);
+      return false;
+    }
+  }
+
+  if (typeof payload.signedPreKey !== 'object') {
+    console.error("❌ signedPreKey должен быть объектом");
+    return false;
+  }
+
+  const spk = payload.signedPreKey;
+  const spkFields = ['keyId', 'publicKey', 'privateKey', 'signature', 'createdAt'];
+  for (const field of spkFields) {
+    if (!spk[field] || (typeof spk[field] !== 'string' && field !== 'keyId' && field !== 'createdAt')) {
+      console.error(`❌ Поле signedPreKey.${field} некорректно`);
+      return false;
+    }
+  }
+
+  if (!Array.isArray(payload.oneTimePreKeys) || payload.oneTimePreKeys.length === 0) {
+    console.error("❌ oneTimePreKeys должен быть непустым массивом");
+    return false;
+  }
+
+  for (const [i, otp] of payload.oneTimePreKeys.entries()) {
+    const otpFields = ['keyId', 'publicKey', 'privateKey', 'createdAt'];
+    for (const field of otpFields) {
+      if (!otp[field]) {
+        console.error(`❌ Ключ oneTimePreKeys[${i}] не содержит поле ${field}`);
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+if (!validateRegisterPayload(payload)) {
+  console.error("⛔ Payload не прошёл валидацию, регистрация прервана");
+  return;
+}
+;
 
       const res = await fetch('http://localhost:5001/api/auth/register', {
         method: 'POST',
