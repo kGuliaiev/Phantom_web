@@ -3,7 +3,7 @@ const baseURL = 'http://localhost:5001';
 export const API = {
   baseURL,
 
-  generateIdentifierURL: `${baseURL}/api/auth/generate-identifier`,
+  generateIdentifierURL: `${baseURL}/api/users/generateUniqueIdentifier`,
   registerURL: `${baseURL}/api/auth/register`,
   loginURL: `${baseURL}/api/auth/login`,
   checkUserURL: `${baseURL}/api/auth/check-user`,

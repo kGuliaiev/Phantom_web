@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Tabs, Form, Input, Button, Typography } from 'antd';
-import 'antd/dist/antd.css';
+import 'antd/dist/reset.css';
 import '../src/AuthPage.css'; // Подключение файла со стилями
+import { API } from '../src/config'; // путь зависит от структуры, уточни при необходимости
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -10,10 +11,24 @@ const AuthPage = () => {
   const [identifier, setIdentifier] = useState('');
 
   // Функция для генерации уникального идентификатора
-  const generateIdentifier = () => {
-    // Здесь должна быть логика для запроса к серверу и получения уникального идентификатора
-    const newIdentifier = 'A1B2C3D4'; // Пример идентификатора
-    setIdentifier(newIdentifier);
+  const generateIdentifier = async () => {
+    try {
+      const response = await fetch(API.generateIdentifierURL); // или `${API.baseURL}/auth/generate-identifier`
+      if (!response.ok) {
+        throw new Error("Ошибка сервера при генерации идентификатора");
+      }
+  
+      const data = await response.json();
+      if (data.identifier) {
+        console.log("✅ Уникальный идентификатор получен:", data.identifier);
+        setIdentifier(data.identifier);
+      } else {
+        console.error("❌ Сервер вернул некорректный ответ:", data);
+      }
+    } catch (error) {
+      console.error("❌ Не удалось получить идентификатор:", error);
+      alert("⚠️ Не удалось получить идентификатор. Попробуйте позже.");
+    }
   };
 
   return (
