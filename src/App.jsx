@@ -120,20 +120,21 @@ function App() {
       <header>
         <h2>👤 {userId}</h2>
 
-  {/* КНОПКИ СЕССИИ */}
   <div className="session-actions">
     <button onClick={handleLogout}>🚪 Выход</button>
     <button onClick={handleFullDelete} className="danger-button">🧨 Удалить всё!</button>
   </div>
-  
+
+
+      </header>
+
+      <main className="main-layout">
+        
+        <div className="sidebar">
         <div className="tabs">
           <button onClick={() => setTab('contacts')} className={tab === 'contacts' ? 'active' : ''}>Контакты</button>
           <button onClick={() => setTab('chats')} className={tab === 'chats' ? 'active' : ''}>Чаты</button>
         </div>
-      </header>
-
-      <main className="main-layout">
-        <div className="sidebar">
           {tab === 'contacts' ? (
             <ContactList currentUser={userId} onSelect={selectChat} />
           ) : (
@@ -158,32 +159,30 @@ function App() {
     </div>
   );
 }
-
 const handleLogout = () => {
   localStorage.removeItem('phantom_username');
-  localStorage.removeItem('token');
+  localStorage.removeItem('phantom_identifier');
   setUserId('');
   setLoggedIn(false);
 };
 
 const handleFullDelete = async () => {
-  const confirmed = window.confirm('Вы уверены, что хотите удалить все данные без возможности восстановления?');
-  if (!confirmed) return;
-
   try {
-    await fetch(`${API.fullDeleteUserURL}/${userId}`, {
-      method: 'DELETE',
-    });
-    await clearAll(); // Очистка IndexedDB и ключей
-    localStorage.removeItem('phantom_username');
-    localStorage.removeItem('token');
+    const confirm = window.confirm('Удалить все данные? Это необратимо!');
+    if (!confirm) return;
+
+    const identifier = localStorage.getItem('phantom_identifier');
+    if (!identifier) throw new Error('Идентификатор не найден');
+
+    await fetch(`${API.deleteAllURL}/${identifier}`, { method: 'DELETE' });
+    await clearAll(); // Очистка IndexedDB + localStorage
     setUserId('');
     setLoggedIn(false);
+    alert('Данные удалены');
   } catch (error) {
-    console.error('Ошибка при полном удалении данных:', error);
+    console.error('Ошибка при полном удалении:', error);
   }
 };
-
 
 
 export default App;
