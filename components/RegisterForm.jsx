@@ -1,149 +1,188 @@
-// Файл: src/components/RegisterForm.jsx
+// App.jsx
 import React, { useState } from 'react';
+import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
-import { CryptoManager } from '../src/crypto/CryptoManager';
+import { CryptoManager } from '../crypto/CryptoManager';
+import ChatList from './ChatList';
+import './App.css';
 
-const RegisterForm = ({ onSuccess }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+const { Title } = Typography;
+const { TabPane } = Tabs;
 
-  const handleRegister = async () => {
-    if (password !== confirmPassword) {
-      setError('Пароли не совпадают');
-      return;
-    }
+function App() {
+  const [identifier, setIdentifier] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginForm] = Form.useForm();
+  const [registerForm] = Form.useForm();
 
-    setLoading(true);
-    setError(null);
-
+  const generateIdentifier = async () => {
     try {
-      const crypto = new CryptoManager();
-      const identityKeyPair = await crypto.generateIdentityKeyPair();
-      const signedPreKey = await crypto.generateSignedPreKey(identityKeyPair.privateKey);
-      const oneTimePreKeys = await crypto.generateOneTimePreKeys(5);
-      const hashedPassword = await crypto.hashPassword(password);
-
-      const identifier = localStorage.getItem('phantom_identifier');
-      if (!identifier) throw new Error('Идентификатор не найден');
-
-      const payload = {
-        username: username,                // ✅
-        password: hashedPassword,   
-        identifier,
-        identityKey: identityKeyPair.publicKey,
-        publicKey:  identityKeyPair.publicKey,
-        signedPreKey,
-        oneTimePreKeys
-      }
-
-console.log("🚀 Payload отправки на сервер:", payload);
-
-function validateRegisterPayload(payload) {
-  const requiredFields = ['username', 'password', 'identifier', 'identityKey', 'signedPreKey', 'oneTimePreKeys'];
-  for (const field of requiredFields) {
-    if (!payload[field]) {
-      console.error(`❌ Отсутствует поле: ${field}`);
-      return false;
-    }
-  }
-
-  if (typeof payload.signedPreKey !== 'object') {
-    console.error("❌ signedPreKey должен быть объектом");
-    return false;
-  }
-
-  const spk = payload.signedPreKey;
-  const spkFields = ['keyId', 'publicKey', 'privateKey', 'signature', 'createdAt'];
-  for (const field of spkFields) {
-    if (!spk[field] || (typeof spk[field] !== 'string' && field !== 'keyId' && field !== 'createdAt')) {
-      console.error(`❌ Поле signedPreKey.${field} некорректно`);
-      return false;
-    }
-  }
-
-  if (!Array.isArray(payload.oneTimePreKeys) || payload.oneTimePreKeys.length === 0) {
-    console.error("❌ oneTimePreKeys должен быть непустым массивом");
-    return false;
-  }
-
-  for (const [i, otp] of payload.oneTimePreKeys.entries()) {
-    const otpFields = ['keyId', 'publicKey', 'privateKey', 'createdAt'];
-    for (const field of otpFields) {
-      if (!otp[field]) {
-        console.error(`❌ Ключ oneTimePreKeys[${i}] не содержит поле ${field}`);
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
-if (!validateRegisterPayload(payload)) {
-  console.error("⛔ Payload не прошёл валидацию, регистрация прервана");
-  return;
-}
-;
-
-      const res = await fetch(API.registerURL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const text = await res.text();
-        console.log("📨 Ответ сервера:", res.status, text);
-
-        let result;
-        try {
-        result = JSON.parse(text);
-        } catch {
-        result = { message: text };
-        }
-
-      if (res.ok) {
-        await crypto.storePrivateKey(identityKeyPair.privateKey, hashedPassword);
-        localStorage.setItem('phantom_username', username);
-        onSuccess();
-      } else {
-        setError(result.message || 'Ошибка регистрации');
-      }
-    } catch (err) {
-      console.error('Ошибка регистрации:', err);
-      setError(err.message || 'Ошибка');
-    } finally {
-      setLoading(false);
+      const res = await fetch(API.generateIdentifierURL);
+      const data = await res.json();
+      setIdentifier(data.identifier);
+      console.log('✅ Уникальный идентификатор получен:', data.identifier);
+    } catch (error) {
+      console.error('❌ Не удалось получить идентификатор:', error);
+      message.error('Сервер недоступен');
     }
   };
 
+  const handleRegister = async (values) => {
+    const { username, password, confirm } = values;
+    if (!identifier) return message.error('Сначала получите идентификатор');
+    if (password !== confirm) return message.error('Пароли не совпадают');
+
+    try {
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
+
+      // Генерация ключей
+      await crypto.generateIdentityKeyPair();
+      await crypto.generateSignedPreKey();
+      await crypto.generateOneTimePreKeys(5);
+
+      const payload = {
+        username,
+        password: passwordHash,
+        identifier,
+        identityKey: crypto.keys.identityKey.publicKey,
+        publicKey: crypto.keys.identityKey.publicKey,
+        signedPreKey: {
+          keyId: crypto.keys.signedPreKey.keyId,
+          publicKey: crypto.keys.signedPreKey.publicKey,
+          signature: crypto.keys.signedPreKey.signature,
+          createdAt: crypto.keys.signedPreKey.createdAt,
+        },
+        oneTimePreKeys: crypto.keys.oneTimePreKeys.map(key => ({
+          keyId: key.keyId,
+          publicKey: key.publicKey,
+          createdAt: key.createdAt
+        }))
+      };
+
+      console.log('📦 Отправка данных на сервер:', payload);
+
+      const res = await fetch(API.registerUserURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        console.log('✅ Пользователь успешно зарегистрирован');
+        localStorage.setItem('phantom_idыentifier', identifier);
+        await crypto.savePrivateData(password);
+        message.success('Регистрация прошла успешно!');
+        setIsAuthenticated(true);
+      } else if (res.status === 409) {
+        message.error('Пользователь с таким именем уже существует');
+      } else {
+        const data = await res.json();
+        message.error(`Ошибка: ${data.message}`);
+      }
+
+    } catch (error) {
+      console.error('Ошибка регистрации:', error);
+      message.error('Ошибка при регистрации');
+    }
+  };
+
+  const handleLogin = async (values) => {
+    const { username, password } = values;
+
+    try {
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
+
+      const res = await fetch(API.validateUserURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: passwordHash }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        console.log('🔓 Вход выполнен, загружаем ключи...');
+        await crypto.loadPrivateData(password);
+        localStorage.setItem('phantom_identifier', data.identifier);
+        setIsAuthenticated(true);
+        message.success('Вход выполнен');
+      } else {
+        message.error(`Ошибка: ${data.message}`);
+      }
+    } catch (err) {
+      console.error('Ошибка входа:', err);
+      message.error('Ошибка при попытке входа');
+    }
+  };
+
+  if (isAuthenticated) return <ChatList />;
+
   return (
-    <div className="register-form">
-      <h2>Регистрация</h2>
-      <input
-        type="text"
-        placeholder="Логин"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Пароль"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <input
-        type="password"
-        placeholder="Подтвердите пароль"
-        value={confirmPassword}
-        onChange={(e) => setConfirmPassword(e.target.value)}
-      />
-      <button onClick={handleRegister} disabled={loading}>Зарегистрироваться</button>
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+    <div className="auth-page">
+      <div className="auth-container">
+        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+          <Title level={2}>🔐 Phantom</Title>
+        </div>
+        <Tabs defaultActiveKey="login" centered onChange={key => key === 'register' && generateIdentifier()}>
+          <TabPane tab="Войти" key="login">
+            <Form form={loginForm} onFinish={handleLogin} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" block>
+                  Войти
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+
+          <TabPane tab="Регистрация" key="register">
+            <div className="identifier-box">
+              ID: <strong>{identifier || '—'}</strong>
+              <Button onClick={generateIdentifier} size="small" style={{ marginLeft: '10px' }}>
+                🔁 Обновить ID
+              </Button>
+            </div>
+            <Form form={registerForm} onFinish={handleRegister} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
+              </Form.Item>
+              <Form.Item
+                name="confirm"
+                label="Повтор пароля"
+                dependencies={['password']}
+                rules={[
+                  { required: true },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      return value === getFieldValue('password')
+                        ? Promise.resolve()
+                        : Promise.reject(new Error('Пароли не совпадают'));
+                    }
+                  }),
+                ]}
+              >
+                <Input.Password />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" block>
+                  Зарегистрироваться
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+        </Tabs>
+      </div>
     </div>
   );
-};
+}
 
-export default RegisterForm;
+export default App;

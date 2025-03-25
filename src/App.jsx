@@ -1,185 +1,175 @@
-import React, { useEffect, useState } from 'react';
-import './App.css';
+import React, { useState } from 'react';
+import { Tabs, Form, Input, Button, Typography, message } from 'antd';
+import { API } from '../src/config';
 import { CryptoManager } from '../crypto/CryptoManager';
-import { clearAll } from '../crypto/CryptoManager';
-import { API } from './config';
+import '../src/App.css';
+import { KeyStorageManager } from '../crypto/KeyStorageManager';
 
-import ChatWindow from '../components/ChatWindow.jsx';
-import ContactList from '../components/ContactList';
-import ChatList from '../components/ChatList';
-import AuthPage from '../components/AuthPage';
+const { Title } = Typography;
+const { TabPane } = Tabs;
 
-function App() {
-  const [crypto, setCrypto] = useState(null);
-  const [userId, setUserId] = useState('');
-  const [loggedIn, setLoggedIn] = useState(false);
-  
-  const [selectedChat, setSelectedChat] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [message, setMessage] = useState('');
-  const [tab, setTab] = useState('chats'); // 'contacts' | 'chats'
+const AuthPage = ({ onSuccess }) => {
+  const [identifier, setIdentifier] = useState('');
+  const [registerForm] = Form.useForm();
+  const [loginForm] = Form.useForm();
 
-  useEffect(() => {
-    setCrypto(new CryptoManager());
-    const saved = localStorage.getItem('phantom_username');
-    if (saved) {
-      setUserId(saved);
-      setLoggedIn(true);
-    }
-  }, []);
-
-  const handleAuthSuccess = () => {
-    const saved = localStorage.getItem('phantom_username');
-    if (saved) {
-      setUserId(saved);
-      setLoggedIn(true);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('phantom_username');
-    setUserId('');
-    setLoggedIn(false);
-  };
-  
-  const handleFullDelete = async () => {
+  const generateIdentifier = async () => {
     try {
-      await fetch(`${API.deleteUserURL}?identifier=${userId}`, { method: 'DELETE' });
-      await clearAll();
-      localStorage.removeItem('phantom_username');
-      setUserId('');
-      setLoggedIn(false);
-      alert('Все данные удалены');
+      const res = await fetch(API.generateIdentifierURL);
+      const data = await res.json();
+      setIdentifier(data.identifier);
+      console.log('✅ Уникальный идентификатор получен:', data.identifier);
     } catch (error) {
-      console.error('Ошибка удаления:', error);
+      console.error('❌ Не удалось получить идентификатор:', error);
+      message.error('Сервер недоступен. Попробуйте позже.');
     }
   };
 
-  const selectChat = async (user) => {
-    setSelectedChat(user);
-  
-    try {
-      const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
-      const messages = await res.json();
-      if (!Array.isArray(messages)) throw new Error('Некорректный формат сообщений');
-  
-      const relevant = messages.filter(
-        (m) =>
-          (m.senderId === user.username && m.receiverId === userId) ||
-          (m.senderId === userId && m.receiverId === user.username)
-      );
-  
-      const decryptedMessages = await Promise.all(
-        relevant.map(async (msg) => {
-          try {
-            const plain = await crypto.decryptMessage(msg.text);
-            return {
-              id: msg._id,
-              text: `${msg.senderId}: ${plain}`,
-              status: msg.status || 'sent'
-            };
-          } catch {
-            return {
-              id: msg._id,
-              text: `${msg.senderId}: [Ошибка дешифрования]`,
-              status: msg.status || 'sent'
-            };
-          }
-        })
-      );
-  
-      setChatMessages(decryptedMessages.map((m) => m.text));
-  
-      // 📨 Отправим подтверждение о прочтении входящих сообщений
-      const unreadIds = relevant
-        .filter((m) => m.receiverId === userId && m.status !== 'read')
-        .map((m) => m._id);
-  
-      if (unreadIds.length > 0) {
-        await fetch(`${API.confirmReadURL}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messageIds: unreadIds })
-        });
-      }
-    } catch (err) {
-      console.error("Ошибка загрузки сообщений:", err);
-    }
-  };
+  const handleRegister = async (values) => {
+    const { username, password, confirm } = values;
+    if (!identifier) return message.error('Сначала получите идентификатор');
+    if (password !== confirm) return message.error('Пароли не совпадают');
 
-  const sendMessage = async () => {
-    if (!selectedChat) return;
     try {
-      const receiverId = selectedChat.username;
-      const res = await fetch(`${API.checkUserURL}?userId=${receiverId}`);
-      const { publicKey } = await res.json();
-      const encrypted = await crypto.encryptMessage(publicKey, message);
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
 
-      await fetch(`${API.sendMessageURL}`, {
+      const identityKey = await crypto.generateIdentityKeyPair();
+      const signedPreKey = await crypto.generateSignedPreKey(identityKey.privateKey);
+      const oneTimePreKeys = await crypto.generateOneTimePreKeys(5);
+
+      const payload = {
+        username,
+        password: passwordHash,
+        identifier,
+        identityKey: identityKey.publicKey,
+        publicKey: identityKey.publicKey,
+        signedPreKey,
+        oneTimePreKeys: oneTimePreKeys.map(k => ({
+          keyId: k.keyId,
+          publicKey: k.publicKey,
+          createdAt: k.createdAt,
+        })),
+      };
+
+      const res = await fetch(API.registerURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          senderId: userId,
-          receiverId,
-          text: encrypted
-        })
+        body: JSON.stringify(payload),
       });
 
-      setMessage('');
-      selectChat(selectedChat); // обновим сообщения
-    } catch (err) {
-      console.error('Ошибка отправки сообщения:', err);
+      if (res.ok) {
+        message.success('Регистрация прошла успешно!');
+        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
+        localStorage.setItem('phantom_username', username);
+        window.location.href = '/chats';
+      } else {
+        const data = await res.json();
+        message.error(`Ошибка регистрации: ${data.message}`);
+      }
+    } catch (error) {
+      console.error('Ошибка регистрации:', error);
+      message.error('Ошибка при регистрации');
     }
   };
 
-  if (!crypto) return <div>Загрузка шифрования...</div>;
+  const handleLogin = async (values) => {
+    const { username, password } = values;
 
-  if (!loggedIn) return <AuthPage onSuccess={handleAuthSuccess} />
+    try {
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
+
+      const res = await fetch(API.validateUserURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: passwordHash }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        message.success('Регистрация прошла успешно!');
+        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
+        localStorage.setItem('phantom_username', username);
+        window.location.href = '/chats';
+        }
+        message.success('Вход выполнен');
+        onSuccess();
+      } else {
+        message.error(`Ошибка: ${data.message}`);
+      }
+    } catch (err) {
+      console.error('Ошибка входа:', err);
+      message.error('Ошибка при попытке входа');
+    }
+  };
 
   return (
-    <div className="App">
-      <header>
-        <h2>👤 {userId}</h2>
-
-  <div className="session-actions">
-    <button onClick={handleLogout}>🚪 Выход</button>
-    <button onClick={handleFullDelete} className="danger-button">🧨 Удалить всё!</button>
-  </div>
-
-
-      </header>
-
-      <main className="main-layout">
-        
-        <div className="sidebar">
-        <div className="tabs">
-          <button onClick={() => setTab('contacts')} className={tab === 'contacts' ? 'active' : ''}>Контакты</button>
-          <button onClick={() => setTab('chats')} className={tab === 'chats' ? 'active' : ''}>Чаты</button>
-        </div>
-          {tab === 'contacts' ? (
-            <ContactList currentUser={userId} onSelect={selectChat} />
-          ) : (
-            <ChatList currentUser={userId} onSelect={selectChat} />
-          )}
+    <div className="auth-page">
+      <div className="auth-container">
+        <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+          <Title level={2}>🔐 Phantom</Title>
         </div>
 
-        <div className="content">
-          {selectedChat ? (
-            <ChatWindow
-              selectedChat={selectedChat}
-              messages={chatMessages}
-              message={message}
-              onMessageChange={setMessage}
-              onSend={sendMessage}
-            />
-          ) : (
-            <div className="no-chat">Выберите чат или контакт</div>
-          )}
-        </div>
-      </main>
+        <Tabs defaultActiveKey="login" centered onChange={(key) => key === "register" && generateIdentifier()}>
+          <TabPane tab="Войти" key="login">
+            <Form form={loginForm} onFinish={handleLogin} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" block>
+                  Войти
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+
+          <TabPane tab="Регистрация" key="register">
+            <div className="identifier-box">
+              ID: <strong>{identifier || "—"}</strong>
+              <Button onClick={generateIdentifier} size="small" style={{ marginLeft: "10px" }}>
+                🔁 Обновить ID
+              </Button>
+            </div>
+            <Form form={registerForm} onFinish={handleRegister} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
+              </Form.Item>
+              <Form.Item
+                name="confirm"
+                label="Повтор пароля"
+                dependencies={["password"]}
+                rules={[
+                  { required: true },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      return value === getFieldValue("password")
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Пароли не совпадают"));
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" block>
+                  Зарегистрироваться
+                </Button>
+              </Form.Item>
+            </Form>
+          </TabPane>
+        </Tabs>
+      </div>
     </div>
   );
-}
+};
 
-
-export default App;
+export default AuthPage;

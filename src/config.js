@@ -15,3 +15,4 @@ export const API = {
   addContactURL: `${baseURL}/api/contacts/add`,
   getContactsURL: (username) => `${baseURL}/api/contacts/${username}`,
 };
+

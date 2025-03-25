@@ -2,6 +2,7 @@
 import { saveEncryptedKey, loadEncryptedKey } from './KeyStorageManager';
 
 export class CryptoManager {
+  
   async generateIdentityKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey(
       {
@@ -94,6 +95,29 @@ export class CryptoManager {
     return preKeys;
   }
 
+
+  async generateEncryptionKeyPair() {
+    const keyPair = await window.crypto.subtle.generateKey(
+      {
+        name: 'ECDH',
+        namedCurve: 'P-256'
+      },
+      true,
+      ['deriveKey', 'deriveBits']
+    );
+  
+    const publicKeySpki = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
+    const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeySpki)));
+    const privateKeyJwk = await window.crypto.subtle.exportKey('jwk', keyPair.privateKey);
+  
+    this._log('✅ Сгенерирован ECDH publicKey для обмена');
+  
+    return {
+      publicKey: publicKeyBase64,
+      privateKey: JSON.stringify(privateKeyJwk)
+    };
+  }
+  
   async importReceiverKey(base64Key) {
     try {
       const binary = atob(base64Key);
@@ -241,6 +265,8 @@ export class CryptoManager {
     console.log(`[${now}] [CryptoManager] [IP: ${ip}] ${message}`);
   }
 }
+
+
 export async function clearAll() {
   try {
     localStorage.clear();

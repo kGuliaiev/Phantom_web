@@ -1,9 +1,9 @@
-// components/AuthPage.jsx
 import React, { useState } from 'react';
 import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
 import { CryptoManager } from '../crypto/CryptoManager';
 import '../src/App.css';
+import { KeyStorageManager } from '../crypto/KeyStorageManager';
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -28,26 +28,31 @@ const AuthPage = ({ onSuccess }) => {
   const handleRegister = async (values) => {
     const { username, password, confirm } = values;
     if (!identifier) return message.error('Сначала получите идентификатор');
-
     if (password !== confirm) return message.error('Пароли не совпадают');
 
     try {
-        const crypto = new CryptoManager();
-        const keys = await crypto.generateKeys(password);
-      
-        const payload = {
-          username,
-          password: await crypto.hashPassword(password),
-          identifier,
-          identityKey: keys.identityKey.publicKey,
-          publicKey: keys.publicKey,
-          signedPreKey: keys.signedPreKey,
-          oneTimePreKeys: keys.oneTimePreKeys,
-        };
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
 
-      console.log('Регистрация с данными:', payload);
+      const identityKey = await crypto.generateIdentityKeyPair();
+      const signedPreKey = await crypto.generateSignedPreKey(identityKey.privateKey);
+      const oneTimePreKeys = await crypto.generateOneTimePreKeys(5);
 
-      const res = await fetch(API.registerUserURL, {
+      const payload = {
+        username,
+        password: passwordHash,
+        identifier,
+        identityKey: identityKey.publicKey,
+        publicKey: identityKey.publicKey,
+        signedPreKey,
+        oneTimePreKeys: oneTimePreKeys.map(k => ({
+          keyId: k.keyId,
+          publicKey: k.publicKey,
+          createdAt: k.createdAt,
+        })),
+      };
+
+      const res = await fetch(API.registerURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -55,16 +60,16 @@ const AuthPage = ({ onSuccess }) => {
 
       if (res.ok) {
         message.success('Регистрация прошла успешно!');
+        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
         localStorage.setItem('phantom_username', username);
-        await crypto.savePrivateData(password);
-        onSuccess();
+        window.location.href = '/chats';
       } else {
         const data = await res.json();
         message.error(`Ошибка регистрации: ${data.message}`);
       }
     } catch (error) {
       console.error('Ошибка регистрации:', error);
-      message.error('Ошибка регистрации');
+      message.error('Ошибка при регистрации');
     }
   };
 
@@ -83,8 +88,11 @@ const AuthPage = ({ onSuccess }) => {
 
       const data = await res.json();
       if (res.ok) {
+        message.success('Регистрация прошла успешно!');
+        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
         localStorage.setItem('phantom_username', username);
-        await crypto.loadPrivateData(password);
+        window.location.href = '/chats';
+        }
         message.success('Вход выполнен');
         onSuccess();
       } else {
@@ -99,10 +107,11 @@ const AuthPage = ({ onSuccess }) => {
   return (
     <div className="auth-page">
       <div className="auth-container">
-      <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
-        <Title level={2}>🔐 Phantom</Title>
+        <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+          <Title level={2}>🔐 Phantom</Title>
         </div>
-        <Tabs defaultActiveKey="login" centered onChange={(key) => key === 'register' && generateIdentifier()}>
+
+        <Tabs defaultActiveKey="login" centered onChange={(key) => key === "register" && generateIdentifier()}>
           <TabPane tab="Войти" key="login">
             <Form form={loginForm} onFinish={handleLogin} layout="vertical">
               <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
@@ -120,15 +129,11 @@ const AuthPage = ({ onSuccess }) => {
           </TabPane>
 
           <TabPane tab="Регистрация" key="register">
-                    <div className="identifier-box">
-                ID: <strong>{identifier || '—'}</strong>
-                <Button
-                onClick={generateIdentifier}
-                size="small"
-                style={{ marginLeft: '10px' }}
-                >
+            <div className="identifier-box">
+              ID: <strong>{identifier || "—"}</strong>
+              <Button onClick={generateIdentifier} size="small" style={{ marginLeft: "10px" }}>
                 🔁 Обновить ID
-                </Button>
+              </Button>
             </div>
             <Form form={registerForm} onFinish={handleRegister} layout="vertical">
               <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
@@ -137,16 +142,21 @@ const AuthPage = ({ onSuccess }) => {
               <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
                 <Input.Password />
               </Form.Item>
-              <Form.Item name="confirm" label="Повтор пароля" dependencies={['password']} rules={[
-                { required: true },
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    return value === getFieldValue('password')
-                      ? Promise.resolve()
-                      : Promise.reject(new Error('Пароли не совпадают'));
-                  }
-                }),
-              ]}>
+              <Form.Item
+                name="confirm"
+                label="Повтор пароля"
+                dependencies={["password"]}
+                rules={[
+                  { required: true },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      return value === getFieldValue("password")
+                        ? Promise.resolve()
+                        : Promise.reject(new Error("Пароли не совпадают"));
+                    },
+                  }),
+                ]}
+              >
                 <Input.Password />
               </Form.Item>
               <Form.Item>
