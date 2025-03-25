@@ -22,7 +22,15 @@ const LoginForm = ({ onSuccess }) => {
         body: JSON.stringify({ username, password: hashedPassword })
       });
 
-      const result = await res.json();
+      const text = await res.text();
+        console.log("📨 Ответ сервера:", res.status, text);
+
+        let result;
+        try {
+        result = JSON.parse(text);
+        } catch {
+        result = { message: text };
+        }
 
       if (!res.ok) {
         setError(result.message || 'Ошибка входа');

@@ -29,11 +29,11 @@ const RegisterForm = ({ onSuccess }) => {
       if (!identifier) throw new Error('Идентификатор не найден');
 
       const payload = {
-        login: username,
-        password: hashedPassword,
+        username: username,                // ✅
+        password: hashedPassword,   
         identifier,
-        publicKey: identityKeyPair.publicKey,
         identityKey: identityKeyPair.publicKey,
+        publicKey:  identityKeyPair.publicKey,
         signedPreKey,
         oneTimePreKeys
       }
@@ -41,7 +41,7 @@ const RegisterForm = ({ onSuccess }) => {
 console.log("🚀 Payload отправки на сервер:", payload);
 
 function validateRegisterPayload(payload) {
-  const requiredFields = ['login', 'passwordHash', 'identifier', 'identityKey', 'signedPreKey', 'oneTimePreKeys'];
+  const requiredFields = ['username', 'password', 'identifier', 'identityKey', 'signedPreKey', 'oneTimePreKeys'];
   for (const field of requiredFields) {
     if (!payload[field]) {
       console.error(`❌ Отсутствует поле: ${field}`);
@@ -93,7 +93,15 @@ if (!validateRegisterPayload(payload)) {
         body: JSON.stringify(payload)
       });
 
-      const result = await res.json();
+      const text = await res.text();
+        console.log("📨 Ответ сервера:", res.status, text);
+
+        let result;
+        try {
+        result = JSON.parse(text);
+        } catch {
+        result = { message: text };
+        }
 
       if (res.ok) {
         await crypto.storePrivateKey(identityKeyPair.privateKey, hashedPassword);
