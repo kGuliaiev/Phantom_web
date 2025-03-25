@@ -3,10 +3,8 @@ import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
 import { CryptoManager } from '../crypto/CryptoManager';
 import '../src/App.css';
-import { KeyStorageManager } from '../crypto/KeyStorageManager';
 
 const { Title } = Typography;
-const { TabPane } = Tabs;
 
 const AuthPage = ({ onSuccess }) => {
   const [identifier, setIdentifier] = useState('');
@@ -52,30 +50,34 @@ const AuthPage = ({ onSuccess }) => {
         })),
       };
 
-      const res = await fetch(API.registerURL, {
+      console.log('📦 Регистрация с данными:', payload);
+
+      const res = await fetch(API.registerUserURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload)
       });
 
       if (res.ok) {
-        message.success('Регистрация прошла успешно!');
-        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
-        localStorage.setItem('phantom_username', username);
-        window.location.href = '/chats';
+        await crypto.saveToIndexedDB(username, keyBundle, passwordHash);
+        message.success('Пользователь успешно зарегистрирован!');
+        if (typeof onSuccess === 'function') {
+          onSuccess();
+        } else {
+          console.warn('⚠️ onSuccess не является функцией');
+        }
       } else {
         const data = await res.json();
         message.error(`Ошибка регистрации: ${data.message}`);
       }
     } catch (error) {
       console.error('Ошибка регистрации:', error);
-      message.error('Ошибка при регистрации');
+      message.error('Ошибка регистрации');
     }
   };
 
   const handleLogin = async (values) => {
     const { username, password } = values;
-
     try {
       const crypto = new CryptoManager();
       const passwordHash = await crypto.hashPassword(password);
@@ -83,20 +85,20 @@ const AuthPage = ({ onSuccess }) => {
       const res = await fetch(API.validateUserURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password: passwordHash }),
+        body: JSON.stringify({ username, password: passwordHash })
       });
 
-      const data = await res.json();
       if (res.ok) {
-        message.success('Регистрация прошла успешно!');
-        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
-        localStorage.setItem('phantom_username', username);
-        window.location.href = '/chats';
-        }
+        await crypto.loadFromIndexedDB(username, passwordHash);
         message.success('Вход выполнен');
-        onSuccess();
+        if (typeof onSuccess === 'function') {
+          onSuccess();
+        } else {
+          console.warn('⚠️ onSuccess не является функцией');
+        }
       } else {
-        message.error(`Ошибка: ${data.message}`);
+        const data = await res.json();
+        message.error(`Ошибка входа: ${data.message}`);
       }
     } catch (err) {
       console.error('Ошибка входа:', err);
@@ -107,12 +109,11 @@ const AuthPage = ({ onSuccess }) => {
   return (
     <div className="auth-page">
       <div className="auth-container">
-        <div style={{ textAlign: "center", marginBottom: "1rem" }}>
+        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
           <Title level={2}>🔐 Phantom</Title>
         </div>
-
-        <Tabs defaultActiveKey="login" centered onChange={(key) => key === "register" && generateIdentifier()}>
-          <TabPane tab="Войти" key="login">
+        <Tabs defaultActiveKey="login" centered onChange={(key) => key === 'register' && generateIdentifier()}>
+          <Tabs.TabPane tab="Войти" key="login">
             <Form form={loginForm} onFinish={handleLogin} layout="vertical">
               <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
                 <Input />
@@ -126,12 +127,12 @@ const AuthPage = ({ onSuccess }) => {
                 </Button>
               </Form.Item>
             </Form>
-          </TabPane>
+          </Tabs.TabPane>
 
-          <TabPane tab="Регистрация" key="register">
+          <Tabs.TabPane tab="Регистрация" key="register">
             <div className="identifier-box">
-              ID: <strong>{identifier || "—"}</strong>
-              <Button onClick={generateIdentifier} size="small" style={{ marginLeft: "10px" }}>
+              ID: <strong>{identifier || '—'}</strong>
+              <Button onClick={generateIdentifier} size="small" style={{ marginLeft: '10px' }}>
                 🔁 Обновить ID
               </Button>
             </div>
@@ -142,21 +143,16 @@ const AuthPage = ({ onSuccess }) => {
               <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
                 <Input.Password />
               </Form.Item>
-              <Form.Item
-                name="confirm"
-                label="Повтор пароля"
-                dependencies={["password"]}
-                rules={[
-                  { required: true },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      return value === getFieldValue("password")
-                        ? Promise.resolve()
-                        : Promise.reject(new Error("Пароли не совпадают"));
-                    },
-                  }),
-                ]}
-              >
+              <Form.Item name="confirm" label="Повтор пароля" dependencies={['password']} rules={[
+                { required: true },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    return value === getFieldValue('password')
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('Пароли не совпадают'));
+                  }
+                })
+              ]}>
                 <Input.Password />
               </Form.Item>
               <Form.Item>
@@ -165,7 +161,7 @@ const AuthPage = ({ onSuccess }) => {
                 </Button>
               </Form.Item>
             </Form>
-          </TabPane>
+          </Tabs.TabPane>
         </Tabs>
       </div>
     </div>
