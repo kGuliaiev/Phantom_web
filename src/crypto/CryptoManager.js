@@ -241,19 +241,15 @@ export class CryptoManager {
     console.log(`[${now}] [CryptoManager] [IP: ${ip}] ${message}`);
   }
 }
-// ВНИЗУ ФАЙЛА CryptoManager.js
-
-export const clearAll = async () => {
+export async function clearAll() {
   try {
-    // Удаляем всё из IndexedDB
-    await indexedDB.deleteDatabase('phantom-store');
-
-    // Чистим localStorage
-    localStorage.removeItem('phantom_username');
-    localStorage.removeItem('phantom_identifier');
-
-    console.log("🧹 Все локальные данные очищены");
-  } catch (error) {
-    console.error("❌ Ошибка при очистке данных:", error);
+    localStorage.clear();
+    if ('indexedDB' in window) {
+      const req = window.indexedDB.deleteDatabase('phantom_keys');
+      req.onsuccess = () => console.log('✅ IndexedDB очищен');
+      req.onerror = () => console.error('❌ Ошибка удаления IndexedDB');
+    }
+  } catch (err) {
+    console.error('❌ Ошибка при очистке всех данных:', err);
   }
-};
+}

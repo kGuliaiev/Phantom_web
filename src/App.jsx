@@ -43,8 +43,8 @@ function App() {
   
   const handleFullDelete = async () => {
     try {
+      await fetch(`${API.deleteUserURL}?identifier=${userId}`, { method: 'DELETE' });
       await clearAll();
-      await fetch(`${API.deleteUserDataURL}/${userId}`, { method: 'DELETE' });
       localStorage.removeItem('phantom_username');
       setUserId('');
       setLoggedIn(false);
@@ -53,7 +53,7 @@ function App() {
       console.error('Ошибка удаления:', error);
     }
   };
-  
+
   const selectChat = async (user) => {
     setSelectedChat(user);
   
