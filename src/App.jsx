@@ -35,24 +35,52 @@ function App() {
 
   const selectChat = async (user) => {
     setSelectedChat(user);
+  
     try {
       const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
       const messages = await res.json();
-      const filtered = messages.filter(
-        m => m.senderId === user.username || m.receiverId === user.username
+  
+      const relevant = messages.filter(
+        (m) =>
+          (m.senderId === user.username && m.receiverId === userId) ||
+          (m.senderId === userId && m.receiverId === user.username)
       );
-
-      const decrypted = await Promise.all(filtered.map(async (m) => {
-        try {
-          const plain = await crypto.decryptMessage(m.text);
-          return `${m.senderId}: ${plain}`;
-        } catch {
-          return `${m.senderId}: [Ошибка дешифрования]`;
-        }
-      }));
-      setChatMessages(decrypted);
+  
+      const decryptedMessages = await Promise.all(
+        relevant.map(async (msg) => {
+          try {
+            const plain = await crypto.decryptMessage(msg.text);
+            return {
+              id: msg._id,
+              text: `${msg.senderId}: ${plain}`,
+              status: msg.status || 'sent'
+            };
+          } catch {
+            return {
+              id: msg._id,
+              text: `${msg.senderId}: [Ошибка дешифрования]`,
+              status: msg.status || 'sent'
+            };
+          }
+        })
+      );
+  
+      setChatMessages(decryptedMessages.map((m) => m.text));
+  
+      // 📨 Отправим подтверждение о прочтении входящих сообщений
+      const unreadIds = relevant
+        .filter((m) => m.receiverId === userId && m.status !== 'read')
+        .map((m) => m._id);
+  
+      if (unreadIds.length > 0) {
+        await fetch(`${API.confirmReadURL}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageIds: unreadIds })
+        });
+      }
     } catch (err) {
-      console.error('Ошибка загрузки сообщений:', err);
+      console.error("Ошибка загрузки сообщений:", err);
     }
   };
 
