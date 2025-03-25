@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import { CryptoManager } from '../crypto/CryptoManager';
-import { API } from './config';
 import { clearAll } from '../crypto/CryptoManager';
+import { API } from './config';
+
 import ChatWindow from '../components/ChatWindow.jsx';
 import ContactList from '../components/ContactList';
 import ChatList from '../components/ChatList';
