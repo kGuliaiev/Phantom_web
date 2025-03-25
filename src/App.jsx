@@ -3,7 +3,6 @@ import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
 import { CryptoManager } from '../crypto/CryptoManager';
 import '../src/App.css';
-import { KeyStorageManager } from '../crypto/KeyStorageManager';
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -60,9 +59,8 @@ const AuthPage = ({ onSuccess }) => {
 
       if (res.ok) {
         message.success('Регистрация прошла успешно!');
-        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
-        localStorage.setItem('phantom_username', username);
-        window.location.href = '/chats';
+        await crypto.storePrivateKey(identityKey.privateKey, passwordHash);
+        onSuccess();
       } else {
         const data = await res.json();
         message.error(`Ошибка регистрации: ${data.message}`);
@@ -88,10 +86,9 @@ const AuthPage = ({ onSuccess }) => {
 
       const data = await res.json();
       if (res.ok) {
-        message.success('Регистрация прошла успешно!');
-        await KeyStorageManager.saveEncryptedKeys(username, { identityKey, signedPreKey, oneTimePreKeys }, passwordHash);
-        localStorage.setItem('phantom_username', username);
-        window.location.href = '/chats';
+        const decrypted = await crypto.loadPrivateKey(passwordHash);
+        if (!decrypted) {
+          return message.error('Не удалось расшифровать приватный ключ. Неверный пароль?');
         }
         message.success('Вход выполнен');
         onSuccess();
