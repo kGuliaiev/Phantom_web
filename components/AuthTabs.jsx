@@ -1,14 +1,27 @@
-// Файл: src/components/AuthTabs.jsx
 import React, { useState } from 'react';
 import LoginForm from './LoginForm';
 import RegisterForm from './RegisterForm';
+import { API } from '../src/config';
 
 const AuthTabs = ({ onSuccess }) => {
   const [activeTab, setActiveTab] = useState('login');
 
+  const handleStartRegister = async () => {
+    try {
+      const res = await fetch(API.generateIdentifierURL);
+      const data = await res.json();
+      localStorage.setItem('phantom_identifier', data.identifier);
+      console.log('🆔 [AuthTabs] Получен ID при старте регистрации:', data.identifier);
+      setActiveTab('register');
+    } catch (err) {
+      console.error('❌ Не удалось получить идентификатор:', err);
+      alert('Ошибка при инициализации регистрации');
+    }
+  };
+
   return (
     <div className="auth-tabs">
-      <div className="tab-buttons">
+      <div className="tabs">
         <button
           className={activeTab === 'login' ? 'active' : ''}
           onClick={() => setActiveTab('login')}
@@ -17,7 +30,7 @@ const AuthTabs = ({ onSuccess }) => {
         </button>
         <button
           className={activeTab === 'register' ? 'active' : ''}
-          onClick={() => setActiveTab('register')}
+          onClick={handleStartRegister}
         >
           Регистрация
         </button>

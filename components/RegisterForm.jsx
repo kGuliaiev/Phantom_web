@@ -1,5 +1,6 @@
 // Файл: src/components/RegisterForm.jsx
 import React, { useState } from 'react';
+import { API } from '../src/config';
 import { CryptoManager } from '../src/crypto/CryptoManager';
 
 const RegisterForm = ({ onSuccess }) => {
@@ -87,7 +88,7 @@ if (!validateRegisterPayload(payload)) {
 }
 ;
 
-      const res = await fetch('http://localhost:5001/api/auth/register', {
+      const res = await fetch(API.registerURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
