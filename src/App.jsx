@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import './App.css';
 import { CryptoManager } from './crypto/CryptoManager';
 import { API } from './config';
+import { clearAll } from './crypto/CryptoManager';
 import ChatWindow from '../components/ChatWindow.jsx';
 import ContactList from '../components/ContactList';
 import ChatList from '../components/ChatList';
@@ -39,6 +40,7 @@ function App() {
     try {
       const res = await fetch(`${API.receiveMessagesURL}?receiverId=${userId}`);
       const messages = await res.json();
+      if (!Array.isArray(messages)) throw new Error('Некорректный формат сообщений');
   
       const relevant = messages.filter(
         (m) =>
@@ -117,6 +119,13 @@ function App() {
     <div className="App">
       <header>
         <h2>👤 {userId}</h2>
+
+  {/* КНОПКИ СЕССИИ */}
+  <div className="session-actions">
+    <button onClick={handleLogout}>🚪 Выход</button>
+    <button onClick={handleFullDelete} className="danger-button">🧨 Удалить всё!</button>
+  </div>
+  
         <div className="tabs">
           <button onClick={() => setTab('contacts')} className={tab === 'contacts' ? 'active' : ''}>Контакты</button>
           <button onClick={() => setTab('chats')} className={tab === 'chats' ? 'active' : ''}>Чаты</button>
@@ -149,5 +158,32 @@ function App() {
     </div>
   );
 }
+
+const handleLogout = () => {
+  localStorage.removeItem('phantom_username');
+  localStorage.removeItem('token');
+  setUserId('');
+  setLoggedIn(false);
+};
+
+const handleFullDelete = async () => {
+  const confirmed = window.confirm('Вы уверены, что хотите удалить все данные без возможности восстановления?');
+  if (!confirmed) return;
+
+  try {
+    await fetch(`${API.fullDeleteUserURL}/${userId}`, {
+      method: 'DELETE',
+    });
+    await clearAll(); // Очистка IndexedDB и ключей
+    localStorage.removeItem('phantom_username');
+    localStorage.removeItem('token');
+    setUserId('');
+    setLoggedIn(false);
+  } catch (error) {
+    console.error('Ошибка при полном удалении данных:', error);
+  }
+};
+
+
 
 export default App;

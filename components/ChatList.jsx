@@ -22,6 +22,7 @@ const ChatList = ({ currentUser, onSelect }) => {
       try {
         const res = await fetch(`${API.receiveMessagesURL}?receiverId=${currentUser}`);
         const messages = await res.json();
+        if (!Array.isArray(messages)) throw new Error('Некорректный формат сообщений');
 
         const statusMap = {};
 
