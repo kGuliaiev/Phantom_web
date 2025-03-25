@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import './App.css';
-import { CryptoManager } from './crypto/CryptoManager';
+import { CryptoManager } from '../crypto/CryptoManager';
 import { API } from './config';
-import { clearAll } from './crypto/CryptoManager';
+import { clearAll } from '../crypto/CryptoManager';
 import ChatWindow from '../components/ChatWindow.jsx';
 import ContactList from '../components/ContactList';
 import ChatList from '../components/ChatList';
-import AuthTabs from '../components/AuthTabs';
+import AuthPage from '../components/AuthPage';
 
 function App() {
   const [crypto, setCrypto] = useState(null);
@@ -133,7 +133,7 @@ function App() {
 
   if (!crypto) return <div>Загрузка шифрования...</div>;
 
-  if (!loggedIn) return <AuthTabs onSuccess={handleAuthSuccess} />;
+  if (!loggedIn) return <AuthPage onSuccess={handleAuthSuccess} />
 
   return (
     <div className="App">
