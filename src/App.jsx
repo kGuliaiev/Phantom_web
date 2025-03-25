@@ -12,6 +12,7 @@ function App() {
   const [crypto, setCrypto] = useState(null);
   const [userId, setUserId] = useState('');
   const [loggedIn, setLoggedIn] = useState(false);
+  
   const [selectedChat, setSelectedChat] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [message, setMessage] = useState('');
@@ -34,6 +35,25 @@ function App() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('phantom_username');
+    setUserId('');
+    setLoggedIn(false);
+  };
+  
+  const handleFullDelete = async () => {
+    try {
+      await clearAll();
+      await fetch(`${API.deleteUserDataURL}/${userId}`, { method: 'DELETE' });
+      localStorage.removeItem('phantom_username');
+      setUserId('');
+      setLoggedIn(false);
+      alert('Все данные удалены');
+    } catch (error) {
+      console.error('Ошибка удаления:', error);
+    }
+  };
+  
   const selectChat = async (user) => {
     setSelectedChat(user);
   
@@ -159,30 +179,6 @@ function App() {
     </div>
   );
 }
-const handleLogout = () => {
-  localStorage.removeItem('phantom_username');
-  localStorage.removeItem('phantom_identifier');
-  setUserId('');
-  setLoggedIn(false);
-};
-
-const handleFullDelete = async () => {
-  try {
-    const confirm = window.confirm('Удалить все данные? Это необратимо!');
-    if (!confirm) return;
-
-    const identifier = localStorage.getItem('phantom_identifier');
-    if (!identifier) throw new Error('Идентификатор не найден');
-
-    await fetch(`${API.deleteAllURL}/${identifier}`, { method: 'DELETE' });
-    await clearAll(); // Очистка IndexedDB + localStorage
-    setUserId('');
-    setLoggedIn(false);
-    alert('Данные удалены');
-  } catch (error) {
-    console.error('Ошибка при полном удалении:', error);
-  }
-};
 
 
 export default App;
