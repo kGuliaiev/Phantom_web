@@ -249,3 +249,9 @@
   .session-actions .danger-button:hover {
     background-color: #ffbbbb;
   }
+
+  .error-message {
+    color: red;
+    margin-top: 10px;
+    font-weight: bold;
+  }
