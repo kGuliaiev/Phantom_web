@@ -1,61 +1,115 @@
+// components/AuthPage.jsx
 import React, { useState } from 'react';
-import { Tabs, Form, Input, Button, Typography } from 'antd';
-import 'antd/dist/reset.css';
-import '../src/AuthPage.css'; // Подключение файла со стилями
-import { API } from '../src/config'; // путь зависит от структуры, уточни при необходимости
+import { Tabs, Form, Input, Button, Typography, message } from 'antd';
+import { API } from '../src/config';
+import { CryptoManager } from '../crypto/CryptoManager';
+import '../src/App.css';
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
 
-const AuthPage = () => {
+const AuthPage = ({ onSuccess }) => {
   const [identifier, setIdentifier] = useState('');
+  const [registerForm] = Form.useForm();
+  const [loginForm] = Form.useForm();
 
-  // Функция для генерации уникального идентификатора
   const generateIdentifier = async () => {
     try {
-      const response = await fetch(API.generateIdentifierURL); // или `${API.baseURL}/auth/generate-identifier`
-      if (!response.ok) {
-        throw new Error("Ошибка сервера при генерации идентификатора");
-      }
-  
-      const data = await response.json();
-      if (data.identifier) {
-        console.log("✅ Уникальный идентификатор получен:", data.identifier);
-        setIdentifier(data.identifier);
+      const res = await fetch(API.generateIdentifierURL);
+      const data = await res.json();
+      setIdentifier(data.identifier);
+      console.log('✅ Уникальный идентификатор получен:', data.identifier);
+    } catch (error) {
+      console.error('❌ Не удалось получить идентификатор:', error);
+      message.error('Сервер недоступен. Попробуйте позже.');
+    }
+  };
+
+  const handleRegister = async (values) => {
+    const { username, password, confirm } = values;
+    if (!identifier) return message.error('Сначала получите идентификатор');
+
+    if (password !== confirm) return message.error('Пароли не совпадают');
+
+    try {
+        const crypto = new CryptoManager();
+        const keys = await crypto.generateKeys(password);
+      
+        const payload = {
+          username,
+          password: await crypto.hashPassword(password),
+          identifier,
+          identityKey: keys.identityKey.publicKey,
+          publicKey: keys.publicKey,
+          signedPreKey: keys.signedPreKey,
+          oneTimePreKeys: keys.oneTimePreKeys,
+        };
+
+      console.log('Регистрация с данными:', payload);
+
+      const res = await fetch(API.registerUserURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        message.success('Регистрация прошла успешно!');
+        localStorage.setItem('phantom_username', username);
+        await crypto.savePrivateData(password);
+        onSuccess();
       } else {
-        console.error("❌ Сервер вернул некорректный ответ:", data);
+        const data = await res.json();
+        message.error(`Ошибка регистрации: ${data.message}`);
       }
     } catch (error) {
-      console.error("❌ Не удалось получить идентификатор:", error);
-      alert("⚠️ Не удалось получить идентификатор. Попробуйте позже.");
+      console.error('Ошибка регистрации:', error);
+      message.error('Ошибка регистрации');
+    }
+  };
+
+  const handleLogin = async (values) => {
+    const { username, password } = values;
+
+    try {
+      const crypto = new CryptoManager();
+      const passwordHash = await crypto.hashPassword(password);
+
+      const res = await fetch(API.validateUserURL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: passwordHash }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem('phantom_username', username);
+        await crypto.loadPrivateData(password);
+        message.success('Вход выполнен');
+        onSuccess();
+      } else {
+        message.error(`Ошибка: ${data.message}`);
+      }
+    } catch (err) {
+      console.error('Ошибка входа:', err);
+      message.error('Ошибка при попытке входа');
     }
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-box">
-        <Title level={2} className="logo">
-          <img src="/path-to-logo.png" alt="Phantom Logo" className="logo-image" />
-          Phantom
-        </Title>
-        <Tabs defaultActiveKey="1" centered>
-          <TabPane tab="Войти" key="1">
-            <Form
-              name="login"
-              initialValues={{ remember: true }}
-              onFinish={(values) => console.log('Вход с данными:', values)}
-            >
-              <Form.Item
-                name="username"
-                rules={[{ required: true, message: 'Пожалуйста, введите ваш логин!' }]}
-              >
-                <Input placeholder="Логин" />
+    <div className="auth-page">
+      <div className="auth-container">
+      <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+        <Title level={2}>🔐 Phantom</Title>
+        </div>
+        <Tabs defaultActiveKey="login" centered onChange={(key) => key === 'register' && generateIdentifier()}>
+          <TabPane tab="Войти" key="login">
+            <Form form={loginForm} onFinish={handleLogin} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
               </Form.Item>
-              <Form.Item
-                name="password"
-                rules={[{ required: true, message: 'Пожалуйста, введите ваш пароль!' }]}
-              >
-                <Input.Password placeholder="Пароль" />
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" block>
@@ -64,53 +118,36 @@ const AuthPage = () => {
               </Form.Item>
             </Form>
           </TabPane>
-          <TabPane tab="Регистрация" key="2">
-            <Form
-              name="register"
-              initialValues={{ remember: true }}
-              onFinish={(values) => console.log('Регистрация с данными:', values)}
-            >
-              <Form.Item>
-                <Input
-                  value={identifier}
-                  placeholder="Уникальный идентификатор"
-                  readOnly
-                  addonAfter={
-                    <Button onClick={generateIdentifier} type="link">
-                      Сгенерировать
-                    </Button>
+
+          <TabPane tab="Регистрация" key="register">
+                    <div className="identifier-box">
+                ID: <strong>{identifier || '—'}</strong>
+                <Button
+                onClick={generateIdentifier}
+                size="small"
+                style={{ marginLeft: '10px' }}
+                >
+                🔁 Обновить ID
+                </Button>
+            </div>
+            <Form form={registerForm} onFinish={handleRegister} layout="vertical">
+              <Form.Item name="username" label="Логин" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
+              <Form.Item name="password" label="Пароль" rules={[{ required: true }]}>
+                <Input.Password />
+              </Form.Item>
+              <Form.Item name="confirm" label="Повтор пароля" dependencies={['password']} rules={[
+                { required: true },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    return value === getFieldValue('password')
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('Пароли не совпадают'));
                   }
-                />
-              </Form.Item>
-              <Form.Item
-                name="username"
-                rules={[{ required: true, message: 'Пожалуйста, введите ваш логин!' }]}
-              >
-                <Input placeholder="Логин" />
-              </Form.Item>
-              <Form.Item
-                name="password"
-                rules={[{ required: true, message: 'Пожалуйста, введите ваш пароль!' }]}
-              >
-                <Input.Password placeholder="Пароль" />
-              </Form.Item>
-              <Form.Item
-                name="confirm"
-                dependencies={['password']}
-                hasFeedback
-                rules={[
-                  { required: true, message: 'Пожалуйста, подтвердите ваш пароль!' },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || getFieldValue('password') === value) {
-                        return Promise.resolve();
-                      }
-                      return Promise.reject(new Error('Пароли не совпадают!'));
-                    },
-                  }),
-                ]}
-              >
-                <Input.Password placeholder="Подтвердите пароль" />
+                }),
+              ]}>
+                <Input.Password />
               </Form.Item>
               <Form.Item>
                 <Button type="primary" htmlType="submit" block>
