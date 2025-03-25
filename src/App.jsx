@@ -1,4 +1,3 @@
-// Обновлённый App.jsx с AuthTabs
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import { CryptoManager } from './crypto/CryptoManager';
@@ -8,30 +7,45 @@ import ChatWindow from '../components/ChatWindow.jsx';
 import AddContactForm from '../components/AddContactForm';
 import ContactList from '../components/ContactList';
 import AuthTabs from '../components/AuthTabs';
+import RegisterStep from '../components/RegisterStep';
+import RegisterFinalizeStep from '../components/RegisterFinalizeStep';
 
-function App() {
-  const [userId, setUserId] = useState('');
-  const [loggedIn, setLoggedIn] = useState(false);
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+
+const RegisterFlow = ({ onSuccess }) => {
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState(null);
+  const navigate = useNavigate();
+
+  if (step === 1) {
+    return (
+      <RegisterStep onNext={(data) => {
+        setFormData(data);
+        setStep(2);
+      }} />
+    );
+  }
+
+  if (step === 2 && formData) {
+    return (
+      <RegisterFinalizeStep
+        {...formData}
+        onSuccess={() => {
+          onSuccess();
+          navigate('/chat');
+        }}
+      />
+    );
+  }
+
+  return null;
+};
+
+function ChatApp({ userId, crypto }) {
   const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
   const [chatMessages, setChatMessages] = useState([]);
   const [chatList, setChatList] = useState([]);
-  const [crypto, setCrypto] = useState(null);
-
-  useEffect(() => {
-    setCrypto(new CryptoManager());
-    const savedUser = localStorage.getItem('phantom_username');
-    if (savedUser) {
-      setUserId(savedUser);
-    }
-  }, []);
-
-  const handleAuthSuccess = () => {
-    const savedUser = localStorage.getItem('phantom_username');
-    if (savedUser) setUserId(savedUser);
-    setLoggedIn(true);
-    fetchChats();
-  };
 
   const fetchChats = async () => {
     try {
@@ -43,6 +57,10 @@ function App() {
       console.error("Ошибка загрузки чатов:", err);
     }
   };
+
+  useEffect(() => {
+    fetchChats();
+  }, [userId]);
 
   const selectChat = async (receiver) => {
     setSelectedChat(receiver);
@@ -91,30 +109,60 @@ function App() {
     }
   };
 
+  return (
+    <div className="messenger">
+      <h2>Добро пожаловать, {userId}</h2>
+      <AddContactForm currentUser={userId} onContactAdded={fetchChats} />
+      <ContactList currentUser={userId} onStartChat={(id) => setSelectedChat({ userId: id })} />
+      <ChatList chats={chatList} onSelect={selectChat} />
+      {selectedChat && (
+        <ChatWindow
+          selectedChat={selectedChat}
+          messages={chatMessages}
+          message={message}
+          onMessageChange={setMessage}
+          onSend={sendMessage}
+        />
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [crypto, setCrypto] = useState(null);
+  const [userId, setUserId] = useState('');
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const cm = new CryptoManager();
+    setCrypto(cm);
+
+    const savedUser = localStorage.getItem('phantom_username');
+    if (savedUser) {
+      setUserId(savedUser);
+      setLoggedIn(true);
+    }
+  }, []);
+
+  const handleAuthSuccess = () => {
+    const savedUser = localStorage.getItem('phantom_username');
+    if (savedUser) {
+      setUserId(savedUser);
+      setLoggedIn(true);
+    }
+  };
+
   if (!crypto) return <div>Загрузка криптографии...</div>;
 
   return (
-    <div className="App">
-      {!loggedIn ? (
-        <AuthTabs onSuccess={handleAuthSuccess} />
-      ) : (
-        <div className="messenger">
-          <h2>Добро пожаловать, {userId}</h2>
-          <AddContactForm currentUser={userId} onContactAdded={fetchChats} />
-          <ContactList currentUser={userId} onStartChat={(id) => setSelectedChat({ userId: id })} />
-          <ChatList chats={chatList} onSelect={selectChat} />
-          {selectedChat && (
-            <ChatWindow
-              selectedChat={selectedChat}
-              messages={chatMessages}
-              message={message}
-              onMessageChange={setMessage}
-              onSend={sendMessage}
-            />
-          )}
-        </div>
-      )}
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Navigate to={loggedIn ? "/chat" : "/login"} />} />
+        <Route path="/register" element={<RegisterFlow onSuccess={handleAuthSuccess} />} />
+        <Route path="/login" element={<AuthTabs onSuccess={handleAuthSuccess} />} />
+        <Route path="/chat" element={loggedIn ? <ChatApp userId={userId} crypto={crypto} /> : <Navigate to="/login" />} />
+      </Routes>
+    </Router>
   );
 }
 

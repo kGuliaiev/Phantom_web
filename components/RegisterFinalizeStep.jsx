@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import CryptoManager from '../utils/CryptoManager';
+import { CryptoManager } from '../src/crypto/CryptoManager';
 
 const RegisterFinalizeStep = ({ identifier, username, password, onSuccess }) => {
   const [status, setStatus] = useState('⏳ Генерация ключей...');
