@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
-import { CryptoManager } from '../crypto/CryptoManager';
+import { generateRegistrationData, CryptoManager } from '../crypto/CryptoManager';
 import ChatList from './ChatList';
 import '../src/App.css';
 
@@ -33,14 +33,16 @@ const AuthPage = ({ onSuccess }) => {
 
     try {
       const crypto = new CryptoManager();
+      const usernameHash = await crypto.hashPassword(username);
       const passwordHash = await crypto.hashPassword(password);
-
+      const credentialsHash = await crypto.hashPassword(usernameHash + passwordHash);
+      
       const identityKey = await crypto.generateIdentityKeyPair();
       const signedPreKey = await crypto.generateSignedPreKey(identityKey.privateKey);
       const oneTimePreKeys = await crypto.generateOneTimePreKeys(5);
 
       const payload = {
-        username,
+        username: usernameHash,
         password: passwordHash,
         identifier,
         identityKey: identityKey.publicKey,
@@ -84,16 +86,17 @@ const AuthPage = ({ onSuccess }) => {
     const { username, password } = values;
     try {
       const crypto = new CryptoManager();
+      const usernameHash = await crypto.hashPassword(username);
       const passwordHash = await crypto.hashPassword(password);
 
       const res = await fetch(API.validateUserURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password: passwordHash })
+        body: JSON.stringify({ username: usernameHash, password: passwordHash })
       });
 
       if (res.ok) {
-        await crypto.loadFromIndexedDB(username, passwordHash);
+        await crypto.loadFromIndexedDB(usernameHash, passwordHash);
         message.success('Вход выполнен');
         if (typeof onSuccess === 'function') {
           onSuccess();

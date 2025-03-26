@@ -2,7 +2,11 @@
 import { saveEncryptedKey, loadEncryptedKey } from './KeyStorageManager';
 
 export class CryptoManager {
-  
+  async deriveCredentialsHash(username, password) {
+    return await this.hashPassword(username + password);
+ }
+
+
   async generateIdentityKeyPair() {
     const keyPair = await window.crypto.subtle.generateKey(
       {
