@@ -2,14 +2,17 @@ import React, { useState } from 'react';
 import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
 import { CryptoManager } from '../crypto/CryptoManager';
+import ChatList from './ChatList';
 import '../src/App.css';
 
 const { Title } = Typography;
+const { TabPane } = Tabs;
 
 const AuthPage = ({ onSuccess }) => {
   const [identifier, setIdentifier] = useState('');
   const [registerForm] = Form.useForm();
   const [loginForm] = Form.useForm();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const generateIdentifier = async () => {
     try {
@@ -46,33 +49,34 @@ const AuthPage = ({ onSuccess }) => {
         oneTimePreKeys: oneTimePreKeys.map(k => ({
           keyId: k.keyId,
           publicKey: k.publicKey,
-          createdAt: k.createdAt,
-        })),
+          createdAt: k.createdAt
+        }))
       };
 
       console.log('📦 Регистрация с данными:', payload);
 
-      const res = await fetch(API.registerUserURL, {
+      const res = await fetch(API.registerURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
       if (res.ok) {
-        await crypto.saveToIndexedDB(username, keyBundle, passwordHash);
-        message.success('Пользователь успешно зарегистрирован!');
-        if (typeof onSuccess === 'function') {
-          onSuccess();
-        } else {
-          console.warn('⚠️ onSuccess не является функцией');
-        }
+        console.log('✅ Пользователь успешно зарегистрирован');
+        localStorage.setItem('phantom_identifier', identifier);
+        await crypto.savePrivateData(password);
+        message.success('Регистрация прошла успешно!');
+        setIsAuthenticated(true);
+      } else if (res.status === 409) {
+        message.error('Пользователь с таким именем уже существует');
       } else {
         const data = await res.json();
-        message.error(`Ошибка регистрации: ${data.message}`);
+        message.error(`Ошибка: ${data.message}`);
       }
+
     } catch (error) {
       console.error('Ошибка регистрации:', error);
-      message.error('Ошибка регистрации');
+      message.error('Ошибка при регистрации');
     }
   };
 
@@ -105,6 +109,9 @@ const AuthPage = ({ onSuccess }) => {
       message.error('Ошибка при попытке входа');
     }
   };
+
+
+  if (isAuthenticated) return <ChatList />;
 
   return (
     <div className="auth-page">
