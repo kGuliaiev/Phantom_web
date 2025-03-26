@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Tabs, Form, Input, Button, Typography, message } from 'antd';
 import { API } from '../src/config';
-import { generateRegistrationData, CryptoManager } from '../crypto/CryptoManager';
-import ChatList from './ChatList';
+import { CryptoManager } from '../crypto/CryptoManager';
+
+import MainPage from './MainPage';
+// import ChatList from './ChatList';
 import '../src/App.css';
+
 
 const { Title } = Typography;
 const { TabPane } = Tabs;
@@ -35,8 +38,7 @@ const AuthPage = ({ onSuccess }) => {
       const crypto = new CryptoManager();
       const usernameHash = await crypto.hashPassword(username);
       const passwordHash = await crypto.hashPassword(password);
-      const credentialsHash = await crypto.hashPassword(usernameHash + passwordHash);
-      
+
       const identityKey = await crypto.generateIdentityKeyPair();
       const signedPreKey = await crypto.generateSignedPreKey(identityKey.privateKey);
       const oneTimePreKeys = await crypto.generateOneTimePreKeys(5);
@@ -65,8 +67,21 @@ const AuthPage = ({ onSuccess }) => {
 
       if (res.ok) {
         console.log('✅ Пользователь успешно зарегистрирован');
-        localStorage.setItem('phantom_identifier', identifier);
-        await crypto.savePrivateData(password);
+        
+        const passwordHash = await crypto.deriveCredentialsHash(username, password);
+
+       // 🔐 Сохраняем приватные ключи в шифрованном виде в IndexedDB
+       if (identityKey?.privateKey) {
+         await crypto.storePrivateKey(identityKey.privateKey, passwordHash);
+       }
+       if (signedPreKey?.privateKey) {
+         await crypto.storePrivateKey(signedPreKey.privateKey, passwordHash);
+       }
+       for (const preKey of oneTimePreKeys) {
+         if (preKey?.privateKey) {
+           await crypto.storePrivateKey(preKey.privateKey, passwordHash);
+         }
+       }
         message.success('Регистрация прошла успешно!');
         setIsAuthenticated(true);
       } else if (res.status === 409) {
@@ -89,20 +104,26 @@ const AuthPage = ({ onSuccess }) => {
       const usernameHash = await crypto.hashPassword(username);
       const passwordHash = await crypto.hashPassword(password);
 
-      const res = await fetch(API.validateUserURL, {
+      const res = await fetch(API.loginURL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: usernameHash, password: passwordHash })
       });
 
       if (res.ok) {
-        await crypto.loadFromIndexedDB(usernameHash, passwordHash);
+        const data = await res.json();
+
         message.success('Вход выполнен');
-        if (typeof onSuccess === 'function') {
-          onSuccess();
-        } else {
-          console.warn('⚠️ onSuccess не является функцией');
+        localStorage.setItem('identifier', data.identifier);
+        const passwordHash = await crypto.deriveCredentialsHash(username, password);
+        const privateKey = await crypto.loadPrivateKey(passwordHash);
+        if (!privateKey) {
+          message.error('Не удалось расшифровать локальный ключ. Проверьте пароль.');
+          return;
         }
+
+        setIsAuthenticated(true);
+        
       } else {
         const data = await res.json();
         message.error(`Ошибка входа: ${data.message}`);
@@ -114,7 +135,7 @@ const AuthPage = ({ onSuccess }) => {
   };
 
 
-  if (isAuthenticated) return <ChatList />;
+  if (isAuthenticated) return <MainPage />;
 
   return (
     <div className="auth-page">
