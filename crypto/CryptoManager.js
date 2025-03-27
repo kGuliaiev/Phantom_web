@@ -7,6 +7,35 @@ export class CryptoManager {
  }
 
 
+ // 🔐 Симметричное шифрование с паролем
+async encryptData(data, passwordHash) {
+  const key = await this.deriveAESKeyFromHash(passwordHash);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(data);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encoded
+  );
+  const result = {
+    iv: Array.from(iv),
+    encrypted: Array.from(new Uint8Array(encrypted))
+  };
+  return btoa(JSON.stringify(result));
+}
+
+async decryptData(payloadBase64, passwordHash) {
+  const payload = JSON.parse(atob(payloadBase64));
+  const key = await this.deriveAESKeyFromHash(passwordHash);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: new Uint8Array(payload.iv) },
+    key,
+    new Uint8Array(payload.encrypted)
+  );
+  return new TextDecoder().decode(decrypted);
+}
+
+
  async deriveKeyFromPassword(password) {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(

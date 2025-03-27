@@ -7,12 +7,15 @@ export const API = {
   registerURL: `${baseURL}/api/auth/register`,
   loginURL: `${baseURL}/api/auth/login`,
   checkUserURL: `${baseURL}/api/auth/check-user`,
-
+  
+  addContactURL: `${baseURL}/api/contacts/add`,
+  contactsAdd: `${baseURL}/api/contacts/add`,
+  getContactsURL: (owner) => `${baseURL}/api/contacts/${owner}`,
+  
+  
   usersListURL: `${baseURL}/api/users`,
   sendMessageURL: `${baseURL}/api/messages/send`,
   receiveMessagesURL: `${baseURL}/api/messages/receive`,
 
-  addContactURL: `${baseURL}/api/contacts/add`,
-  getContactsURL: (username) => `${baseURL}/api/contacts/${username}`,
 };
 
