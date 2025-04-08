@@ -144,6 +144,13 @@
     border: 1px solid #ddd;
     border-radius: 6px;
     margin-bottom: 12px;
+    max-height: calc(100vh - 200px); /* адаптируй под свой layout */
+    overflow-y: auto;
+    padding-right: 10px;
+  }
+  
+  .selected-chat {
+    background-color: #e6f7ff !important;
   }
   
   .chat-bubble {

@@ -10,9 +10,11 @@
     },
     "dependencies": {
         "antd": "^5.24.5",
+        "axios": "^1.8.4",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
-        "react-router-dom": "^7.4.0"
+        "react-router-dom": "^7.4.0",
+        "socket.io-client": "^4.8.1"
     },
     "devDependencies": {
         "@vitejs/plugin-react": "^4.2.1",

@@ -5,19 +5,27 @@ import { Spin } from 'antd';
 
 import MainPage from '../components/MainPage';
 import AuthPage from '../components/AuthPage';
-import Logout from '../components/Logout';
-import { API } from '../src/config';
+import Logout   from '../components/Logout';
+import { API }  from '../src/config';
+
+
+
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [checkingAuth,    setCheckingAuth]    = useState(true);
+
+
 
   useEffect(() => {
     const token         = localStorage.getItem('token');
-    const usernameHash      = localStorage.getItem('usernameHash');
+    const usernameHash  = localStorage.getItem('usernameHash');
     const passwordHash  = localStorage.getItem('passwordHash');
+    const credHash      = localStorage.getItem('credHash');
     const identifier    = localStorage.getItem('identifier');
+    const userId        = localStorage.getItem('userId');
+    const nickname      = localStorage.getItem('nickname');
 
-    console.log('💾 localStorage при старте:', { token, usernameHash, passwordHash, identifier });
+    console.log('💾 localStorage при старте (APP.jsx):', { token, usernameHash, passwordHash, credHash, identifier, userId, nickname });
 
     const validate = async () => {
       if (token && usernameHash && passwordHash && identifier) {
@@ -48,13 +56,7 @@ const App = () => {
     validate();
   }, []);
 
-  if (checkingAuth) {
-    return (
-      <div className="spinner-wrapper">
-        <Spin size="large" tip="Проверка токена..." />
-      </div>
-    );
-  }
+
 
   return (
     <Router>
