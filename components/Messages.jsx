@@ -50,6 +50,8 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
     }
     return `${d.format('DD.MM.YY')} в ${d.format('HH:mm')}`;
   };
+
+  
   const [messageValue, setMessageValue] = useState('');
   const [messages, setMessages] = useState([]);
   const [sendOnEnter, setSendOnEnter] = useState(true);
@@ -247,29 +249,40 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
         });
     
 
-    socket.on('messageDelivered', ({ messageId }) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: 'delivered' } : msg
-        )
-      );
-    });
-    
-    socket.on('messageReceived', ({ messageId }) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: 'received' } : msg
-        )
-      );
-    });
-    
-    socket.on('messageRead', ({ messageId }) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: 'read' } : msg
-        )
-      );
-    });
+        socket.on('messageDelivered', ({ messageId }) => {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.id === messageId ? { ...msg, status: 'delivered' } : msg
+            )
+          );
+          // Временно выводим уведомление на клиенте и логируем в консоль
+          antdMessage.info(`Статус сообщения ${messageId} изменен на "delivered" (API: ${API.sendMessageURL})`);
+          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до delivered, получено через API: ${API.sendMessageURL}`);
+        });
+  
+        // Обработчик изменения статуса: сообщение получено
+        socket.on('messageReceived', ({ messageId }) => {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.id === messageId ? { ...msg, status: 'received' } : msg
+            )
+          );
+          // Временно выводим уведомление на клиенте и логируем в консоль
+          antdMessage.info(`Статус сообщения ${messageId} изменен на "received" (API: ${API.receiveMessagesURL})`);
+          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до received, получено через API: ${API.receiveMessagesURL}`);
+        });
+  
+        // Обработчик изменения статуса: сообщение прочитано
+        socket.on('messageRead', ({ messageId }) => {
+          setMessages((prevMessages) =>
+            prevMessages.map((msg) =>
+              msg.id === messageId ? { ...msg, status: 'read' } : msg
+            )
+          );
+          // Временно выводим уведомление на клиенте и логируем в консоль
+          antdMessage.info(`Статус сообщения ${messageId} изменен на "read" (API: ${API.sendMessageURL})`);
+          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до read, обновлено через API: ${API.sendMessageURL}`);
+        });
     
     return () => {
       socket.off('message', handleMessage);
@@ -374,9 +387,12 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Заголовок чата */}
       <div style={{ padding: '8px 16px', fontWeight: 'bold', borderBottom: '1px solid #ddd' }}>
         {selectedChat.nickname || selectedChat.contactId}
       </div>
+  
+      {/* Список сообщений */}
       <div
         className="message-list"
         style={{
@@ -395,6 +411,7 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
           dataSource={[...messages].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))}
           renderItem={(msg) => {
             const isSent = msg.senderId === identifier;
+            // Классы для оформления: отправленные сообщения — серые (выравнивание вправо), полученные — синие (влево)
             const bubbleClass = isSent ? 'message-bubble message-sent' : 'message-bubble message-received';
             // Определяем эмодзи статуса для отправленных сообщений
             let statusEmoji = '';
@@ -402,25 +419,35 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
               if (msg.status === 'sent') statusEmoji = '⏳'; // не отправлено на сервер
               else if (msg.status === 'delivered') statusEmoji = '☑️'; // сервер получил
               else if (msg.status === 'read') statusEmoji = '👀'; // просмотрено
-              else statusEmoji = '✅'; // получатель получил (или иное)
+              else statusEmoji = '✅'; // получатель получил (или иной статус)
             }
-
             return (
-              <List.Item key={msg.id} style={{ display: 'flex', justifyContent: isSent ? 'flex-end' : 'flex-start' }}>
-                <div className={bubbleClass}>
-                  <div>{msg.text}</div>
-                  {isSent && <div className="message-status"></div>}
-                  <div className="message-timestamp" style={{ fontSize: '0.75em', color: '#888', marginTop: 4 }}>
-                    {formatTimestamp(msg.timestamp)}{statusEmoji} 
-                  </div>
+            <List.Item key={msg.id} style={{ display: 'flex', justifyContent: isSent ? 'flex-end' : 'flex-start' }}>
+              <div className={bubbleClass} style={{ display: 'flex', flexDirection: 'column', alignItems: isSent ? 'flex-end' : 'flex-start' }}>
+                <div>{msg.text}</div>
+                {isSent && <div className="message-status">{statusEmoji}</div>}
+                <div className="message-timestamp" style={{ fontSize: '0.75em', color: '#888', marginTop: 4 }}>
+                  {formatTimestamp(msg.timestamp)}
                 </div>
-              </List.Item>
+              </div>
+            </List.Item>
             );
           }}
         />
         <div ref={messagesEndRef} />
       </div>
-      <div style={{ display: 'flex', padding: 10, borderTop: '1px solid #ddd', background: '#fff', zIndex: 1, marginTop: 'auto' }}>
+  
+      {/* Панель ввода сообщения */}
+      <div
+        style={{
+          display: 'flex',
+          padding: 10,
+          borderTop: '1px solid #ddd',
+          background: '#fff',
+          zIndex: 1,
+          marginTop: 'auto'
+        }}
+      >
         <TextArea
           autoSize={{ minRows: 1, maxRows: 4 }}
           value={messageValue}
@@ -430,57 +457,47 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
           style={{ marginRight: 8 }}
         />
         <Tooltip title={`Enter для отправки: ${sendOnEnter ? 'вкл' : 'выкл'}`}>
-          <Button
-            icon={<CheckOutlined />}
-            onClick={() => setSendOnEnter(prev => !prev)}
-            style={{ marginRight: 8 }}
-          />
+          <Button icon={<CheckOutlined />} onClick={() => setSendOnEnter(prev => !prev)} style={{ marginRight: 8 }} />
         </Tooltip>
+        <Button icon={<SendOutlined />} type="primary" onClick={handleSend} />
         <Button
-          icon={<SendOutlined />}
-          type="primary"
-          onClick={handleSend}
-        />
-            <Button
-              danger
-              type="default"
-              onClick={async () => {
-                Modal.confirm({
-                  title: 'Удалить все сообщения?',
-                  content: 'Вы уверены, что хотите удалить всю переписку с этим пользователем? Это действие необратимо.',
-                  okText: 'Удалить',
-                  cancelText: 'Отмена',
-                  onOk: async () => {
-                    try {
-                      // 1. Удаляем все сообщения локально для текущей переписки                     await clearAllMessages(selectedChat.contactId);
-                      setMessages([]);
-                      setNoMessages(true);
-
-                      // 2. Отправляем запрос на сервер для удаления всей переписки между пользователями
-                      const token = localStorage.getItem('token');
-                      const res = await fetch(`${API.clearConversationURL}?contactId=${selectedChat.contactId}`, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                      });
-                      if (!res.ok) {
-                        throw new Error('Ошибка при удалении переписки на сервере');
-                      }
-
-                      // 3. Отправляем команду через сокет второму абоненту для очистки локальных сообщений
-                      socket.emit('clearChat', { contactId: selectedChat.contactId, senderId: identifier });
-
-                      antdMessage.success('Переписка успешно удалена');
-                    } catch (error) {
-                      console.error('Ошибка при очистке переписки:', error);
-                      antdMessage.error(`Ошибка очистки: ${error.message}`);
-                    }
+          danger
+          type="default"
+          onClick={async () => {
+            Modal.confirm({
+              title: 'Удалить все сообщения?',
+              content: 'Вы уверены, что хотите удалить всю переписку с этим пользователем? Это действие необратимо.',
+              okText: 'Удалить',
+              cancelText: 'Отмена',
+              onOk: async () => {
+                try {
+                  // 1. Удаляем локально все сообщения текущей переписки
+                  await clearAllMessages(selectedChat.contactId);
+                  setMessages([]);
+                  setNoMessages(true);
+                  // 2. Отправляем запрос на сервер для удаления переписки между пользователями
+                  const token = localStorage.getItem('token');
+                  const res = await fetch(`${API.clearConversationURL}?contactId=${selectedChat.contactId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                  });
+                  if (!res.ok) {
+                    throw new Error('Ошибка при удалении переписки на сервере');
                   }
-                });
-              }}
-              style={{ marginLeft: 8 }}
-            >
-              Очистить
-            </Button>
+                  // 3. Отправляем через сокет команду второму абоненту очистить локальные сообщения
+                  socket.emit('clearChat', { contactId: selectedChat.contactId, senderId: identifier });
+                  antdMessage.success('Переписка успешно удалена');
+                } catch (error) {
+                  console.error('Ошибка при очистке переписки:', error);
+                  antdMessage.error(`Ошибка очистки: ${error.message}`);
+                }
+              }
+            });
+          }}
+          style={{ marginLeft: 8 }}
+        >
+          Очистить
+        </Button>
       </div>
     </div>
   );

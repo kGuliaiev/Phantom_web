@@ -579,21 +579,41 @@ const MainPage = () => {
 // socket.emit('identify', { identifier, usernameHash, token });
 export default MainPage;
 
-    socket.on('messageDelivered', ({ messageId }) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: 'delivered' } : msg
-        )
-      );
-    });
+// Обработчик изменения статуса: сообщение доставлено
+      // socket.on('messageDelivered', ({ messageId }) => {
+      //   setMessages((prevMessages) =>
+      //     prevMessages.map((msg) =>
+      //       msg.id === messageId ? { ...msg, status: 'delivered' } : msg
+      //     )
+      //   );
+      //   // Временно выводим уведомление на клиенте и логируем в консоль
+      //   antdMessage.info(`Статус сообщения ${messageId} изменен на "delivered" (API: ${API.sendMessageURL})`);
+      //   console.log(`DEBUG: Сообщение ${messageId} статус обновлен до delivered, получено через API: ${API.sendMessageURL}`);
+      // });
 
-    socket.on('messageRead', ({ messageId }) => {
-      setMessages((prevMessages) =>
-        prevMessages.map((msg) =>
-          msg.id === messageId ? { ...msg, status: 'read' } : msg
-        )
-      );
-    });
+      // // Обработчик изменения статуса: сообщение получено
+      // socket.on('messageReceived', ({ messageId }) => {
+      //   setMessages((prevMessages) =>
+      //     prevMessages.map((msg) =>
+      //       msg.id === messageId ? { ...msg, status: 'received' } : msg
+      //     )
+      //   );
+      //   // Временно выводим уведомление на клиенте и логируем в консоль
+      //   antdMessage.info(`Статус сообщения ${messageId} изменен на "received" (API: ${API.receiveMessagesURL})`);
+      //   console.log(`DEBUG: Сообщение ${messageId} статус обновлен до received, получено через API: ${API.receiveMessagesURL}`);
+      // });
+
+      // // Обработчик изменения статуса: сообщение прочитано
+      // socket.on('messageRead', ({ messageId }) => {
+      //   setMessages((prevMessages) =>
+      //     prevMessages.map((msg) =>
+      //       msg.id === messageId ? { ...msg, status: 'read' } : msg
+      //     )
+      //   );
+      //   // Временно выводим уведомление на клиенте и логируем в консоль
+      //   antdMessage.info(`Статус сообщения ${messageId} изменен на "read" (API: ${API.sendMessageURL})`);
+      //   console.log(`DEBUG: Сообщение ${messageId} статус обновлен до read, обновлено через API: ${API.sendMessageURL}`);
+      // });
 
     socket.on('newMessage', async (message) => {
       await saveEncryptedMessageToDB(message);
