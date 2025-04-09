@@ -35,10 +35,40 @@ class KeyDBManager {
     });
   }
 
+  // ✅ Загружает отдельный зашифрованный ключ по его имени
+  async loadEncryptedKey(keyName) {
+    return new Promise(async (resolve, reject) => {
+      const db = await this.getDB();
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.get(keyName);
+      request.onsuccess = () => {
+           const result = request.result;
+           if (!result) return resolve(null);
+           try {
+             resolve({
+               iv: result.iv, // iv сохранён как Base64-строка
+               cipher: result.cipher ? result.cipher : (result.encrypted || ''),
+               salt: result.salt || null
+             });
+           } catch (err) {
+             console.error(`❌ Ошибка при парсинге ключа '${keyName}':`, err);
+             reject(err);
+           }
+         };
+  
+      request.onerror = (event) => {
+        console.error(`❌ Ошибка при получении ключа '${keyName}':`, event.target.error);
+        reject(event.target.error);
+      };
+    });
+  }
 
 // ✅ Сохраняет набор ключей (по отдельности)
-  async saveEncryptedKey(keyName, encryptedKey) {
+async saveEncryptedKey(keyName, encryptedKey) {
+  
   console.log("saveEncryptedKey ▶️", keyName);
+  
   try {
     const db = await this.getDB();
     const transaction = db.transaction(STORE_NAME, 'readwrite');
@@ -48,50 +78,23 @@ class KeyDBManager {
 
     const request = store.put(entry);
     request.onsuccess = () => {
-      console.log(`📥 Ключ '${keyName}' успешно записан в хранилище`);
+      console.log(`📥 Ключ '${keyName}' успешно записан в хранилище - '${encryptedKey}'`);
+      
     };
 
     request.onerror = (e) => {
       console.error(`❌ Ошибка при сохранении ключа '${keyName}':`, e.target.error);
     };
   } catch (error) {
-    console.error("❌ Ошибка saveEncryptedKey (catch):", error);
-    throw error;
+      console.error("❌ Ошибка saveEncryptedKey (catch):", error);
+      throw error;
   }
 }
 
-// ✅ Загружает отдельный зашифрованный ключ по его имени
-async loadEncryptedKey(keyName) {
-  return new Promise(async (resolve, reject) => {
-    const db = await this.getDB();
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const request = store.get(keyName);
 
-    request.onsuccess = () => {
-      const result = request.result;
-      if (!result) return resolve(null);
-
-      try {
-        resolve({
-          iv: new Uint8Array(result.iv),
-          encrypted: new Uint8Array(result.encrypted)
-        });
-      } catch (err) {
-        console.error(`❌ Ошибка при парсинге ключа '${keyName}':`, err);
-        reject(err);
-      }
-    };
-
-    request.onerror = (event) => {
-      console.error(`❌ Ошибка при получении ключа '${keyName}':`, event.target.error);
-      reject(event.target.error);
-    };
-  });
-}
 
 // 🗑️ Удаляет все сохранённые ключи
- async  deleteAllEncryptedKeys() {
+async  deleteAllEncryptedKeys() {
   try {
     const db = await this.getDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -106,8 +109,9 @@ async loadEncryptedKey(keyName) {
 
 const keyDBInstance = new KeyDBManager();
 export { keyDBInstance as KeyDBManager };
-export const saveEncryptedKey = keyDBInstance.saveEncryptedKey.bind(keyDBInstance);
-export const loadEncryptedKey = keyDBInstance.loadEncryptedKey.bind(keyDBInstance);
+
+export const saveEncryptedKey   = keyDBInstance.saveEncryptedKey.bind(keyDBInstance);
+export const loadEncryptedKey   = keyDBInstance.loadEncryptedKey.bind(keyDBInstance);
 export const saveKeyToIndexedDB = keyDBInstance.saveEncryptedKey.bind(keyDBInstance);
 
 

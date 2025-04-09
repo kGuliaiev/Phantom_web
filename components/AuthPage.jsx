@@ -4,10 +4,10 @@ import { useNavigate }                                      from 'react-router-d
 import MainPage                                             from './MainPage';
 import '../src/App.css';
 
-//import { encryptPrivateKey }          from '../crypto/keysCrypto';
-import { KeyCryptoManager }           from '../crypto/keysCrypto';
-import { saveEncryptedKey }           from '../utils/dbKeys';
-import { API }                        from '../src/config';
+//import { encryptPrivateKey }                from '../crypto/keysCrypto';
+import { KeyCryptoManager }                   from '../crypto/keysCrypto';
+import { saveEncryptedKey, loadEncryptedKey } from '../utils/dbKeys';
+import { API }                                from '../src/config';
 
 import socket from '../src/socket';
 
@@ -102,17 +102,15 @@ const AuthPage = ({ onSuccess = () => {} }) => {
           const encryptedIdentityPrivateKey = await KeyCryptoManager.encryptPrivateKey(identityKey.privateKey, credHash);
           await saveEncryptedKey('identityPrivateKey', encryptedIdentityPrivateKey);
 
-          // identityPublicKey - publicKey
-          const encryptedIdentityPublicKey = await KeyCryptoManager.encryptPrivateKey(identityKey.publicKey, credHash);
-          await saveEncryptedKey('identityPublicKey', encryptedIdentityPublicKey);
+          // identityPublicKey - публичный ключ сохраняем в открытом виде
+          await saveEncryptedKey('identityPublicKey', { encrypted: identityKey.publicKey, iv: new Uint8Array() });
 
           // signedPreKey - privateKey
           const encryptedSignedPrePrivateKey = await KeyCryptoManager.encryptPrivateKey(signedPreKey.privateKey, credHash);
           await saveEncryptedKey('signedPrePrivateKey', encryptedSignedPrePrivateKey);
           
-          // signedPreKey - publicKey
-          const encryptedSignedPrePublicKey = await KeyCryptoManager.encryptPrivateKey(signedPreKey.publicKey, credHash);
-          await saveEncryptedKey('signedPreKeyPublicKey', encryptedSignedPrePublicKey);
+          // signedPreKeyPublicKey - публичный ключ сохраняем в открытом виде
+          await saveEncryptedKey('signedPreKeyPublicKey', { encrypted: signedPreKey.publicKey, iv: new Uint8Array() });
 
           // oneTimePreKeys
           for (let i = 0; i < oneTimePreKeys.length; i++) {
@@ -124,7 +122,7 @@ const AuthPage = ({ onSuccess = () => {} }) => {
           }
           const keyIds = oneTimePreKeys.map(k => k.keyId);
 
-          localStorage.setItem('otpKeyIds', JSON.stringify(keyIds));
+          localStorage.setItem('otpKeyIds',       JSON.stringify(keyIds));
           localStorage.setItem('usernameHash',    usernameHash);
           localStorage.setItem('passwordHash',    passwordHash);
           localStorage.setItem('credHash',        credHash);
@@ -174,17 +172,17 @@ const AuthPage = ({ onSuccess = () => {} }) => {
       if (res.ok) {          
         // Загрузка и расшифровка каждого ключа
         const encryptedIdentity     = await loadEncryptedKey('identityPrivateKey');
-        const encryptedSignedPreKey = await loadEncryptedKey('signedPreKey');
+        const encryptedSignedPreKey = await loadEncryptedKey('signedPrePrivateKey');
 
         if (!encryptedIdentity || !encryptedSignedPreKey) {
           throw new Error('Некоторые зашифрованные ключи не найдены');
         }
   
-        const identityPrivateKey = await cryptoM.decryptPrivateKey(encryptedIdentity,     credHash) //, 'identityPrivateKey');
-        const signedPreKeyPriv   = await cryptoM.decryptPrivateKey(encryptedSignedPreKey, credHash) //, 'signedPreKey');
-              
-        // console.log('✅ Расшифрованный identityPrivateKey:', identityPrivateKey);
-        // console.log('✅ Расшифрованный signedPreKeyPriv:', signedPreKeyPriv);
+        const identityPrivateKey = await KeyCryptoManager.decryptPrivateKey(encryptedIdentity,     credHash);
+        const signedPreKeyPriv   = await KeyCryptoManager.decryptPrivateKey(encryptedSignedPreKey, credHash);       
+
+         console.log('✅ Расшифрованный identityPrivateKey:', identityPrivateKey);
+         console.log('✅ Расшифрованный signedPreKeyPriv:', signedPreKeyPriv);
 
 
         const oneTimePreKeys = [];

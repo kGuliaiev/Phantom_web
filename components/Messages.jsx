@@ -20,12 +20,13 @@ import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { Input, Button, List, message as antdMessage, Tooltip } from 'antd';
 import { SendOutlined, CheckOutlined } from '@ant-design/icons';
+import { cryptoManager } from '../crypto/CryptoManager';
 
 import socket from '../src/socket';
 
 const { TextArea } = Input;
 
-const Messages = ({ selectedChat, identifier, nickname, onlineUsers, crypto }) => {
+const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
   const formatTimestamp = (timestamp) => {
     const d = dayjs(timestamp);
     const now = dayjs();
@@ -234,7 +235,7 @@ const Messages = ({ selectedChat, identifier, nickname, onlineUsers, crypto }) =
     }
 
     try {
-      const encrypted = await crypto.encryptMessage(messageValue, selectedChat.publicKey);
+      const encrypted = await cryptoManager.encryptMessage(messageValue, selectedChat.publicKey);
       const timestamp = Date.now();
       const senderId = localStorage.getItem('identifier');
 

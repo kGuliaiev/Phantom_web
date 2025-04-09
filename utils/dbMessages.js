@@ -34,7 +34,7 @@ export function openDB() {
 
 export async function saveMessage(message) {
   try {
-    const db = await openDatabase();
+    const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     store.put(message);
@@ -52,7 +52,7 @@ export async function saveMessage(message) {
 
 export async function getMessagesByReceiverId(receiverId) {
   try {
-    const db = await openDatabase();
+    const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readonly');
     const store = tx.objectStore(STORE_NAME);
     const request = store.getAll();
@@ -76,7 +76,7 @@ export async function getMessagesByReceiverId(receiverId) {
 
 export async function deleteMessageById(messageId) {
   try {
-    const db = await openDatabase();
+    const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     store.delete(messageId);
@@ -89,7 +89,7 @@ export async function deleteMessageById(messageId) {
 
 export async function clearAllMessages() {
   try {
-    const db = await openDatabase();
+    const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
     store.clear();

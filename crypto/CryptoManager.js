@@ -76,17 +76,17 @@ class CryptoManager {
  
       const aesKey = await window.crypto.subtle.deriveKey(
         {
-          name: 'ECDH',
-          public: importedKey,
-        },
-        keyMaterial,
-        {
-          name: 'AES-GCM',
-          length: 256
-        },
-        false,
-        ['encrypt', 'decrypt']
-      );
+                  name: 'ECDH',
+                  public: importedKey,
+                },
+                keyMaterial,
+                {
+                  name: 'AES-GCM',
+                  length: 256
+                },
+                true,
+                ['encrypt', 'decrypt']
+              );
  
       this._log('✅ AES ключ успешно получен');
       return aesKey;
@@ -421,7 +421,7 @@ class CryptoManager {
       console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] Сгенерирован OTPK ${i}: ${publicKeyBase64}`);
 
       keys.push({
-        keyId: `3${now}-${i}`,
+        keyId: `${now}-${i}`,
         createdAt: now,
         publicKey: publicKeyBase64
         //privateKey: keyPair.privateKey

@@ -37,6 +37,7 @@ const MainPage = () => {
   const [checking, setChecking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [isIdentifierValid, setIsIdentifierValid] = useState(false);
+  const [introductionInput, setIntroductionInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const identifierInputRef  = React.useRef(null);
   const nicknameInputRef    = React.useRef(null);
@@ -59,7 +60,7 @@ const MainPage = () => {
       console.warn('❗️Попытка сохранить невалидные контакты:', data);
       return;
     }
-    const encrypted = await crypto.encryptData(JSON.stringify(data), key);
+    const encrypted = await cryptoM.encryptData(JSON.stringify(data), key);
     localStorage.setItem('contactsEncrypted', encrypted);
   };
 
@@ -94,7 +95,7 @@ const MainPage = () => {
 
       setContacts(data);
 
-      const encrypted = await crypto.encryptData(JSON.stringify(data), credHash);
+      const encrypted = await cryptoM.encryptData(JSON.stringify(data), credHash);
       localStorage.setItem('contactsEncrypted', encrypted);
       
     } catch (error) {
@@ -119,7 +120,7 @@ const MainPage = () => {
     }
   
     try {
-      const decrypted = await crypto.decryptData(encrypted, credHash);
+      const decrypted = await cryptoM.decryptData(encrypted, credHash);
       const parsed = JSON.parse(decrypted);
       if (Array.isArray(parsed)) {
         setContacts(parsed);
@@ -132,6 +133,31 @@ const MainPage = () => {
     }
   };
 
+
+// Новая функция для отправки ответа на запрос дружбы
+const respondToContact = async (senderId, action) => {
+  try {
+    const res = await fetch(API.baseURL + '/api/contacts/respond', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        owner: identifier, // текущий пользователь – получатель запроса
+        contactId: senderId, // идентификатор отправителя запроса
+        action // accept, decline, block
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+    message.success(data.message);
+    loadContactsFromServer();
+  } catch (error) {
+    console.error('Ошибка ответа на запрос дружбы:', error);
+    message.error('Ошибка обработки запроса');
+  }
+};
 
   useEffect(() => {
     loadContactsFromServer();
@@ -304,11 +330,10 @@ const MainPage = () => {
     }
   };
 
-  const handleAddContact = async () => {
+const handleAddContact = async () => {
     if (!identifierInput || !nicknameInput) {
       return message.warning('Введите ID и никнейм');
     }
-
     setAdding(true);
     try {
       const res = await fetch(API.addContactURL, {
@@ -320,7 +345,8 @@ const MainPage = () => {
         body: JSON.stringify({
           owner: identifier,
           contactId: identifierInput,
-          nickname: nicknameInput
+          nickname: nicknameInput,
+          introduction: introductionInput // отправляем приветственное сообщение
         })
       });
 
@@ -329,35 +355,34 @@ const MainPage = () => {
       if (!Array.isArray(data.contacts)) {
         throw new Error("Сервер вернул некорректный список контактов");
       }
-      
       if (res.ok && Array.isArray(data.contacts)) {
         await saveEncryptedContacts(data.contacts, credHash);
-      setContacts(data.contacts);
-      const updatedIds = data.contacts.map(c => c.contactId);
-      if (socket && typeof socket.emit === 'function') {
-        socket.emit('identify', {
-          identifier:   localStorage.getItem('identifier'),
-          usernameHash: localStorage.getItem('usernameHash'),
-          token:        localStorage.getItem('token'),
-        });
-        console.log('📡 Повторная отправка identify после добавления контакта');
-      }
+        setContacts(data.contacts);
+        if (socket && typeof socket.emit === 'function') {
+          socket.emit('identify', {
+            identifier: localStorage.getItem('identifier'),
+            usernameHash: localStorage.getItem('usernameHash'),
+            token: localStorage.getItem('token'),
+          });
+          console.log('📡 Повторная отправка identify после добавления контакта');
+        }
         message.success('Контакт добавлен');
         setIsModalOpen(false);
         setIdentifierInput('');
         setNicknameInput('');
+        setIntroductionInput('');
         setIsIdentifierValid(false);
       } else {
         message.warning('Контакт добавлен, но список не получен');
       }
-    }
-      catch (error) {
+    } catch (error) {
       console.error('Ошибка добавления:', error);
-      message.error('Ошибка при добавлении');
+      message.error('Ошибка при добавлении контакта');
     } finally {
       setAdding(false);
     }
   };
+
 
   const handleDeleteContact = (contactId) => {
     Modal.confirm({
@@ -519,50 +544,34 @@ const MainPage = () => {
       </Layout>
 
       <Modal
-        open={isModalOpen}
         title="Добавить контакт"
-        onCancel={() => {
-          setIsModalOpen(false);
-          setIdentifierInput('');
-          setNicknameInput('');
-          setIsIdentifierValid(false);
-        }}
+        visible={isModalOpen}
+        onCancel={() => setIsModalOpen(false)}
         onOk={handleAddContact}
-        okText="Добавить"
         confirmLoading={adding}
-        okButtonProps={{ disabled: !isIdentifierValid }}
       >
-        <Input.Group compact style={{ marginBottom: 8 }}>
         <Input
-          ref={identifierInputRef}
-          style={{ width: 'calc(100% - 100px)' }}
-          placeholder="Идентификатор пользователя"
+          placeholder="Введите ID пользователя"
           value={identifierInput}
-          onChange={(e) => {
-            const input = e.target.value.toUpperCase();
-            setIdentifierInput(input);
-            setIsIdentifierValid(false);
-          }}
-          onPressEnter={() => {
-            if (identifierInput.length === 8) {
-              handleCheckIdentifier();
-            }
-          }}
+          onChange={(e) => setIdentifierInput(e.target.value)}
+          ref={identifierInputRef}
+          maxLength={8}
+          style={{ marginBottom: 8 }}
         />
-        <Button loading={checking} onClick={handleCheckIdentifier} type="primary">
-            Найти
-        </Button>
-        </Input.Group>
-        {isIdentifierValid && (
-          <Input
-            placeholder="Никнейм"
-            value={nicknameInput}
-            onChange={(e) => setNicknameInput(e.target.value)}
-            onPressEnter={() => {
-              if (isIdentifierValid) handleAddContact();
-            }}
-          />
-        )}
+        <Input
+          placeholder="Введите никнейм для контакта"
+          value={nicknameInput}
+          onChange={(e) => setNicknameInput(e.target.value)}
+          ref={nicknameInputRef}
+          style={{ marginBottom: 8 }}
+        />
+        <TextArea
+          placeholder="Введите приветственное сообщение (знакомство)"
+          value={introductionInput}
+          onChange={(e) => setIntroductionInput(e.target.value)}
+          rows={3}
+          style={{ marginTop: 8 }}
+        />
       </Modal>
     </Layout>
   );
