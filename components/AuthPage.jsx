@@ -112,6 +112,15 @@ const AuthPage = ({ onSuccess = () => {} }) => {
           // signedPreKeyPublicKey - публичный ключ сохраняем в открытом виде
           await saveEncryptedKey('signedPreKeyPublicKey', { encrypted: signedPreKey.publicKey, iv: new Uint8Array() });
 
+
+          if (encryptedIdentityPrivateKey) {
+            localStorage.setItem('identityPrivateKey', JSON.stringify(encryptedIdentityPrivateKey));
+          }
+          if (encryptedSignedPrePrivateKey) {
+            localStorage.setItem('signedPrePrivateKey', JSON.stringify(encryptedSignedPrePrivateKey));
+          }
+
+
           // oneTimePreKeys
           for (let i = 0; i < oneTimePreKeys.length; i++) {
             const pk = oneTimePreKeys[i];
@@ -173,6 +182,13 @@ const AuthPage = ({ onSuccess = () => {} }) => {
         // Загрузка и расшифровка каждого ключа
         const encryptedIdentity     = await loadEncryptedKey('identityPrivateKey');
         const encryptedSignedPreKey = await loadEncryptedKey('signedPrePrivateKey');
+       // Копируем зашифрованные ключи из IndexedDB в localStorage для оперативного доступа (в зашифрованном виде)
+        if (encryptedIdentity) {
+          localStorage.setItem('identityPrivateKey', JSON.stringify(encryptedIdentity));
+        }
+        if (encryptedSignedPreKey) {
+          localStorage.setItem('signedPrePrivateKey', JSON.stringify(encryptedSignedPreKey));
+        }
 
         if (!encryptedIdentity || !encryptedSignedPreKey) {
           throw new Error('Некоторые зашифрованные ключи не найдены');

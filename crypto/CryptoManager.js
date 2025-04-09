@@ -1,3 +1,5 @@
+import { KeyCryptoManager } from './keysCrypto';
+
 class CryptoManager {
   _log(message) {
     const now = new Date().toISOString();
@@ -53,43 +55,51 @@ class CryptoManager {
   
   async deriveAESKey(importedKey) {
     try {
-      const privateKeyData = await loadEncryptedKey('identityPrivateKey');
-      if (!privateKeyData || !privateKeyData.iv || !privateKeyData.encrypted) {
-        throw new Error("Приватный ключ некорректен или отсутствует");
+    let storedKey = localStorage.getItem('identityPrivateKey');
+    if (!storedKey) {
+      throw new Error('Отсутствует сохранённый приватный ключ (identityPrivateKey)');
+    }
+
+    // Если ключ хранится в зашифрованном виде (JSON), расшифровываем его с использованием credHash
+    let identityPrivateKeyPEM;
+    try {
+      const parsed = JSON.parse(storedKey);
+      const credHash = localStorage.getItem('credHash');
+      if (!credHash) {
+        throw new Error('Хэш учетных данных (credHash) не найден');
       }
-      this._log(`🔑 Попытка расшифровки приватного ключа: ${JSON.stringify(privateKeyData)}`);
-      
-      const decryptedRaw = await this.decryptDataFromKeyStorage(privateKeyData);
-      if (!decryptedRaw || !(decryptedRaw instanceof ArrayBuffer)) {
-        throw new Error("Не удалось расшифровать приватный ключ");
-      }
-      
-      const keyMaterial = await window.crypto.subtle.importKey(
-        'pkcs8',
-        decryptedRaw,
-        { name: 'ECDH', namedCurve: 'P-256' },
-        false,
-        ['deriveKey']
-      );
-      
-      this._log("📥 Приватный ключ успешно расшифрован и импортирован");
- 
-      const aesKey = await window.crypto.subtle.deriveKey(
-        {
-                  name: 'ECDH',
-                  public: importedKey,
-                },
-                keyMaterial,
-                {
-                  name: 'AES-GCM',
-                  length: 256
-                },
-                true,
-                ['encrypt', 'decrypt']
-              );
- 
-      this._log('✅ AES ключ успешно получен');
-      return aesKey;
+      identityPrivateKeyPEM = await KeyCryptoManager.decryptPrivateKey(parsed, credHash);
+    } catch (e) {
+      // Если не удалось распарсить JSON, предполагаем, что ключ уже в формате PEM
+      identityPrivateKeyPEM = storedKey;
+    }
+
+    // Конвертируем PEM в ArrayBuffer
+    const privateKeyBuffer = this.pemToArrayBuffer(identityPrivateKeyPEM);
+
+    // Импортируем приватный ключ для алгоритма ECDH с корректными key usages
+    const importedPrivateKey = await window.crypto.subtle.importKey(
+      'pkcs8',
+      privateKeyBuffer,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      ['deriveKey']
+    );
+
+    // Вычисляем общий AES-ключ с параметрами AES-GCM
+    const aesKey = await window.crypto.subtle.deriveKey(
+      {
+        name: 'ECDH',
+        public: importedKey
+      },
+      importedPrivateKey,
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+
+    this._log('✅ AES ключ успешно получен через deriveAESKey');
+    return aesKey;
     } catch (err) {
       this._log(`❌ Ошибка deriveAESKey: ${err.message}`);
       throw err;
@@ -152,7 +162,7 @@ class CryptoManager {
         raw,
         { name: 'ECDH', namedCurve: 'P-256' },
         false,
-        ['deriveKey'] // ← корректно задаём разрешение deriveKey
+        [] // Публичный ключ не используется напрямую для криптографических операций
       );
 
       this._log(`✅ Ключ успешно импортирован для deriveKey`);
@@ -272,7 +282,10 @@ class CryptoManager {
 
   async decryptMessage(encryptedBase64, receiverPublicKeyBase64) {
     try {
-      const encryptedData = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+      // const encryptedData = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+    const sanitized = encryptedBase64.replace(/\s/g, '');
+    const encryptedData = Uint8Array.from(atob(sanitized), c => c.charCodeAt(0));
+
       // Ensure iv and encrypted are extracted only once to avoid duplication
       const iv = encryptedData.slice(0, 12);
       const encrypted = encryptedData.slice(12);
@@ -388,12 +401,19 @@ class CryptoManager {
       true,
       ["sign", "verify"]
     );
-
+ 
     const publicKeyBuffer = await window.crypto.subtle.exportKey('spki', keyPair.publicKey);
     const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyBuffer)));
-
+ 
+    const privateKeyBuffer = await window.crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+    const privateKeyPEM = this.arrayBufferToPEM(privateKeyBuffer, "PRIVATE KEY");
+ 
+    // Сохраняем приватный и публичный ключи в localStorage для дальнейшего использования
+    localStorage.setItem("identityPrivateKey", privateKeyPEM);
+    localStorage.setItem("identityPublicKey", publicKeyBase64);
+ 
     console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] Сгенерирован IdentityKey: ${publicKeyBase64}`);
-
+ 
     return {
       publicKey: publicKeyBase64,
       privateKey: keyPair.privateKey
@@ -443,18 +463,22 @@ class CryptoManager {
   // }
 
   pemToArrayBuffer(pem) {
-    // Удаление заголовков/футеров и пробелов
-    const b64Lines = pem
-      .replace('-----BEGIN PRIVATE KEY-----', '')
-      .replace('-----END PRIVATE KEY-----', '')
-      .replace(/\s/g, '');
-  
-    const byteString = atob(b64Lines);
-    const byteArray = new Uint8Array(byteString.length);
-    for (let i = 0; i < byteString.length; i++) {
-      byteArray[i] = byteString.charCodeAt(i);
+    // Удаляем заголовки, футер и все пробельные символы, чтобы получить чистую Base64 строку
+    const base64String = pem
+      .replace(/-----BEGIN [^-]+-----/, '')
+      .replace(/-----END [^-]+-----/, '')
+      .replace(/\s+/g, '');
+    try {
+      const binaryString = atob(base64String);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
+    } catch (error) {
+      throw new Error('Неверно закодированная PEM-строка: ' + error.message);
     }
-    return byteArray.buffer;
   }
 
 

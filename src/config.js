@@ -20,5 +20,6 @@ export const API = {
 
   sendMessageURL:           `${baseURL}/api/message/send`,
   receiveMessagesURL:       `${baseURL}/api/message/receive`,
+  clearConversationURL:     `${baseURL}/api/message/clear`
 
 };

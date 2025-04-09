@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useRef }     from 'react';
+import { useNavigate }                    from 'react-router-dom';
 
 import {
   Layout, Menu, Button, Tabs, List, Avatar, Input, Modal, message, Tooltip
-} from 'antd';
+}                              from 'antd';
+
 import {
   UserOutlined,
   MessageOutlined,
@@ -11,13 +12,15 @@ import {
   SendOutlined,
   PlusOutlined,
   DeleteOutlined
-} from '@ant-design/icons';
-import { cryptoManager } from '../crypto/CryptoManager';
-import { API } from '../src/config';
-import socket from '../src/socket';
+}                               from '@ant-design/icons';
+
+
+import { cryptoManager }        from '../crypto/CryptoManager';
+import { API }                  from '../src/config';
+import socket                   from '../src/socket';
 
 import '../src/App.css';
-import {Messages} from './Messages';
+import {Messages}               from './Messages';
 
 const { Header, Sider, Content } = Layout;
 const { TextArea } = Input;
@@ -27,6 +30,7 @@ const MainPage = () => {
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [selectedTab, setSelectedTab] = useState('contacts');
   const [selectedChat, setSelectedChat] = useState(null);
+  const selectedChatRef = useRef(null);
   const [messageValue, setMessageValue] = useState('');
   const [contacts, setContacts] = useState([]);
   const [chats] = useState([]);
@@ -37,7 +41,6 @@ const MainPage = () => {
   const [checking, setChecking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [isIdentifierValid, setIsIdentifierValid] = useState(false);
-  const [introductionInput, setIntroductionInput] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const identifierInputRef  = React.useRef(null);
   const nicknameInputRef    = React.useRef(null);
@@ -133,36 +136,14 @@ const MainPage = () => {
     }
   };
 
+  + useEffect(() => {
+       selectedChatRef.current = selectedChat;
+     }, [selectedChat]);
 
-// Новая функция для отправки ответа на запрос дружбы
-const respondToContact = async (senderId, action) => {
-  try {
-    const res = await fetch(API.baseURL + '/api/contacts/respond', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        owner: identifier, // текущий пользователь – получатель запроса
-        contactId: senderId, // идентификатор отправителя запроса
-        action // accept, decline, block
-      })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message);
-    message.success(data.message);
-    loadContactsFromServer();
-  } catch (error) {
-    console.error('Ошибка ответа на запрос дружбы:', error);
-    message.error('Ошибка обработки запроса');
-  }
-};
 
   useEffect(() => {
     loadContactsFromServer();
     loadEncryptedContacts();
-    
   }, []);
 
   useEffect(() => {
@@ -330,10 +311,11 @@ const respondToContact = async (senderId, action) => {
     }
   };
 
-const handleAddContact = async () => {
+  const handleAddContact = async () => {
     if (!identifierInput || !nicknameInput) {
       return message.warning('Введите ID и никнейм');
     }
+
     setAdding(true);
     try {
       const res = await fetch(API.addContactURL, {
@@ -345,8 +327,7 @@ const handleAddContact = async () => {
         body: JSON.stringify({
           owner: identifier,
           contactId: identifierInput,
-          nickname: nicknameInput,
-          introduction: introductionInput // отправляем приветственное сообщение
+          nickname: nicknameInput
         })
       });
 
@@ -355,34 +336,35 @@ const handleAddContact = async () => {
       if (!Array.isArray(data.contacts)) {
         throw new Error("Сервер вернул некорректный список контактов");
       }
+      
       if (res.ok && Array.isArray(data.contacts)) {
         await saveEncryptedContacts(data.contacts, credHash);
-        setContacts(data.contacts);
-        if (socket && typeof socket.emit === 'function') {
-          socket.emit('identify', {
-            identifier: localStorage.getItem('identifier'),
-            usernameHash: localStorage.getItem('usernameHash'),
-            token: localStorage.getItem('token'),
-          });
-          console.log('📡 Повторная отправка identify после добавления контакта');
-        }
+      setContacts(data.contacts);
+      const updatedIds = data.contacts.map(c => c.contactId);
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('identify', {
+          identifier:   localStorage.getItem('identifier'),
+          usernameHash: localStorage.getItem('usernameHash'),
+          token:        localStorage.getItem('token'),
+        });
+        console.log('📡 Повторная отправка identify после добавления контакта');
+      }
         message.success('Контакт добавлен');
         setIsModalOpen(false);
         setIdentifierInput('');
         setNicknameInput('');
-        setIntroductionInput('');
         setIsIdentifierValid(false);
       } else {
         message.warning('Контакт добавлен, но список не получен');
       }
-    } catch (error) {
+    }
+      catch (error) {
       console.error('Ошибка добавления:', error);
-      message.error('Ошибка при добавлении контакта');
+      message.error('Ошибка при добавлении');
     } finally {
       setAdding(false);
     }
   };
-
 
   const handleDeleteContact = (contactId) => {
     Modal.confirm({
@@ -544,34 +526,50 @@ const handleAddContact = async () => {
       </Layout>
 
       <Modal
+        open={isModalOpen}
         title="Добавить контакт"
-        visible={isModalOpen}
-        onCancel={() => setIsModalOpen(false)}
+        onCancel={() => {
+          setIsModalOpen(false);
+          setIdentifierInput('');
+          setNicknameInput('');
+          setIsIdentifierValid(false);
+        }}
         onOk={handleAddContact}
+        okText="Добавить"
         confirmLoading={adding}
+        okButtonProps={{ disabled: !isIdentifierValid }}
       >
+        <Input.Group compact style={{ marginBottom: 8 }}>
         <Input
-          placeholder="Введите ID пользователя"
-          value={identifierInput}
-          onChange={(e) => setIdentifierInput(e.target.value)}
           ref={identifierInputRef}
-          maxLength={8}
-          style={{ marginBottom: 8 }}
+          style={{ width: 'calc(100% - 100px)' }}
+          placeholder="Идентификатор пользователя"
+          value={identifierInput}
+          onChange={(e) => {
+            const input = e.target.value.toUpperCase();
+            setIdentifierInput(input);
+            setIsIdentifierValid(false);
+          }}
+          onPressEnter={() => {
+            if (identifierInput.length === 8) {
+              handleCheckIdentifier();
+            }
+          }}
         />
-        <Input
-          placeholder="Введите никнейм для контакта"
-          value={nicknameInput}
-          onChange={(e) => setNicknameInput(e.target.value)}
-          ref={nicknameInputRef}
-          style={{ marginBottom: 8 }}
-        />
-        <TextArea
-          placeholder="Введите приветственное сообщение (знакомство)"
-          value={introductionInput}
-          onChange={(e) => setIntroductionInput(e.target.value)}
-          rows={3}
-          style={{ marginTop: 8 }}
-        />
+        <Button loading={checking} onClick={handleCheckIdentifier} type="primary">
+            Найти
+        </Button>
+        </Input.Group>
+        {isIdentifierValid && (
+          <Input
+            placeholder="Никнейм"
+            value={nicknameInput}
+            onChange={(e) => setNicknameInput(e.target.value)}
+            onPressEnter={() => {
+              if (isIdentifierValid) handleAddContact();
+            }}
+          />
+        )}
       </Modal>
     </Layout>
   );
@@ -604,3 +602,17 @@ export default MainPage;
       scrollToFirstUnreadMessage();
       socket.emit('messageRead', { messageId: message.id });
     });
+
+     socket.on('chatClearedAck', ({ contactId, clearedBy, from }) => {
+        console.log(`📨 chatClearedAck получен от ${from} (очищено для contactId=${contactId})`);
+        // Если текущий выбранный чат соответствует полученному contactId, удаляем локальные сообщения и уведомляем инициатора.
+        if (selectedChatRef.current && contactId === selectedChatRef.current.contactId) {
+          setMessages([]);
+          antdMessage.success(`Абонент ${from} удалил переписку локально`);
+        }
+        // Отправляем уведомление инициатору, если необходимо
+        const target = onlineUsers.get(clearedBy);
+        if (target?.socketId) {
+          io.to(target.socketId).emit('chatClearedAck', { contactId, from });
+        }
+      });

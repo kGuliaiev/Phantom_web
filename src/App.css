@@ -270,3 +270,32 @@
   align-items: center;
   height: 100vh;
 }
+
+
+.message-bubble {
+  padding: 10px 16px;
+  border-radius: 16px;
+  margin: 8px 0;
+  max-width: 70%;
+  word-wrap: break-word;
+}
+.message-sent {
+  background-color: #e0e0e0; /* светло-серый для отправленных сообщений */
+  align-self: flex-end;
+  text-align: right;
+}
+.message-received {
+  background-color: #cce5ff; /* светло-синий для полученных сообщений */
+  align-self: flex-start;
+  text-align: left;
+}
+.message-status {
+  font-size: 0.8em;
+  margin-top: 4px;
+  color: #888;
+}
+.message-timestamp {
+  font-size: 0.75em;
+  color: #888;
+  margin-top: 4px;
+}

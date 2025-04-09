@@ -1,6 +1,6 @@
 //   utils/dbMessages.js
 const DB_NAME = 'PhantomDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'messages';
 
 
@@ -98,4 +98,38 @@ export async function clearAllMessages() {
   } catch (error) {
     console.error('Ошибка при очистке сообщений:', error);
   }
+}
+
+// dbMessages.js
+
+export async function clearAllMessagesForContact(currentId, contactId) {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const store = tx.objectStore(STORE_NAME);
+
+  const request = store.getAll();
+  return new Promise((resolve, reject) => {
+    request.onsuccess = async () => {
+      const allMessages = request.result;
+      // Фильтруем только те сообщения, где:
+      //   (senderId == currentId && receiverId == contactId)
+      //   или (senderId == contactId && receiverId == currentId).
+      const toDelete = allMessages.filter(
+        m => 
+          (m.senderId   === currentId && m.receiverId === contactId) ||
+          (m.senderId   === contactId && m.receiverId === currentId)
+      );
+
+      for (const msg of toDelete) {
+        store.delete(msg.id);
+      }
+
+      await tx.complete;
+      console.log(`Локально удалено ${toDelete.length} сообщений между ${currentId} и ${contactId}`);
+      resolve();
+    };
+    request.onerror = () => {
+      reject(request.error);
+    };
+  });
 }

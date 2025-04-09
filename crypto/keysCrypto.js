@@ -109,9 +109,9 @@ import { cryptoManager } from './CryptoManager';
       const cipherBuffer = this.base64ToArrayBuffer(cipher);
   
       // Вывод отладочной информации перед расшифрованием
-      console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] cipherBuffer   byteLength: ${new Uint8Array(cipherBuffer).byteLength}`);
-      console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] decodedIv      byteLength: ${new Uint8Array(decodedIv).byteLength}`);
-      console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] effectiveSalt  byteLength: ${new Uint8Array(effectiveSalt).byteLength}`);
+      //console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] cipherBuffer   byteLength: ${new Uint8Array(cipherBuffer).byteLength}`);
+      // console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] decodedIv      byteLength: ${new Uint8Array(decodedIv).byteLength}`);
+      // console.log(`[DEBUG] [${new Date().toISOString()}] [keysCrypto.js] effectiveSalt  byteLength: ${new Uint8Array(effectiveSalt).byteLength}`);
   
       // if (new Uint8Array(cipherBuffer).byteLength < 16) {
       //   throw new Error('Размер зашифрованных данных слишком мал');
@@ -123,9 +123,18 @@ import { cryptoManager } from './CryptoManager';
         cipherBuffer
       );
   
-      const decryptedText = new TextDecoder().decode(decrypted);
-      console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Успешно расшифрованный ключ`);
-      return decryptedText;
+      // const decryptedText = new TextDecoder().decode(decrypted);
+      // console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Успешно расшифрованный ключ`);
+      // return decryptedText;
+
+      // Преобразуем ArrayBuffer в Base64
+      const decryptedBase64 = this.arrayBufferToBase64(decrypted);
+      // Формируем PEM-формат с правильными заголовками и разбивкой строк по 64 символа
+      const lines = decryptedBase64.match(/.{1,64}/g) || [];
+      const pem = `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
+      console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Успешно расшифрованный ключ в PEM`);
+      return pem;
+
     } catch (error) {
       console.error(`[ERROR] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Ошибка расшифрования: ${error.message}`);
       throw error;
