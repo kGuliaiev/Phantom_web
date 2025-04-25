@@ -1,24 +1,25 @@
 import React, { useEffect, useState }                       from 'react';
 import { Tabs, Form, Input, Button, Typography, message }   from 'antd';
 import { useNavigate }                                      from 'react-router-dom';
-import MainPage                                             from './MainPage';
-import '../src/App.css';
-
-//import { encryptPrivateKey }                from '../crypto/keysCrypto';
-import { KeyCryptoManager }                   from '../crypto/keysCrypto';
-import { saveEncryptedKey, loadEncryptedKey } from '../utils/dbKeys';
-import { API }                                from '../src/config';
-
-import socket from '../src/socket';
-
-import   { cryptoManager }            from '../crypto/CryptoManager';
-//import { encryptData }              from '../crypto/CryptoManager';
-//import { decryptData }              from '../crypto/CryptoManager';
-//import { loadEncryptedKey }         from '../crypto/KeyStorageManager';
-//import { saveEncryptedKey }         from '../crypto/KeyStorageManager';
-
 
 const { Title } = Typography;
+
+import '../src/App.css';
+
+
+import MainPage                               from './MainPage';
+import { KeyCryptoManager }                   from '../crypto/keysCrypto';
+import   { cryptoManager }                    from '../crypto/CryptoManager';
+import { saveEncryptedKey, loadEncryptedKey } from '../utils/dbKeys';
+import { API }                                from '../src/config';
+import socketManager                          from '../src/socketManager';
+import { DB_NAME, DB_VERSION, STORE_KEYS,
+  STORE_MESSAGES, STORE_HISTORY }       from '../src/config.js';
+import { KeyDBManager } from '../utils/dbKeys';
+import { clearAllMessages } from '../utils/dbMessages';
+
+
+
 
 const AuthPage = ({ onSuccess = () => {} }) => {
   const navigate                              = useNavigate();
@@ -49,6 +50,13 @@ const AuthPage = ({ onSuccess = () => {} }) => {
     if (password !== confirm) return message.error('Пароли не совпадают');
 
     try {
+      // Очистка локального хранилища и IndexedDB хранилищ
+      localStorage.clear();
+      await new Promise((res, rej) => {
+        const del = indexedDB.deleteDatabase(DB_NAME);
+        del.onsuccess = res;
+        del.onerror   = rej;
+      });
       const cryptoM = cryptoManager;
 
       const usernameHash    = await cryptoM.hashPassword(username);
@@ -97,7 +105,8 @@ const AuthPage = ({ onSuccess = () => {} }) => {
       }
       else
       {
-          // Шифрование каждого ключа отдельно
+        // window.indexedDB.deleteDatabase('PhantomDB'); // (удалено, используем deleteAllEncryptedKeys и clearAllMessages)
+        // Шифрование каждого ключа отдельно
           // identityPrivateKey - privateKey
           const encryptedIdentityPrivateKey = await KeyCryptoManager.encryptPrivateKey(identityKey.privateKey, credHash);
           await saveEncryptedKey('identityPrivateKey', encryptedIdentityPrivateKey);
@@ -127,25 +136,29 @@ const AuthPage = ({ onSuccess = () => {} }) => {
             const encryptedOtpPrivateKey = await KeyCryptoManager.encryptPrivateKey(pk.privateKey, credHash);
             const encPub  = await cryptoM.encryptData(pk.publicKey, credHash);
             await saveEncryptedKey(`oneTimePreKey_${i}_private`, encryptedOtpPrivateKey);
-            await saveEncryptedKey(`otp_${pk.keyId}_pub`,  encPub);
+            await saveEncryptedKey(`otp_${pk.keyId}_pub`, encPub);
           }
           const keyIds = oneTimePreKeys.map(k => k.keyId);
 
           localStorage.setItem('otpKeyIds',       JSON.stringify(keyIds));
+          localStorage.setItem('identityPublicKey', identityKey.publicKey);
+
           localStorage.setItem('usernameHash',    usernameHash);
           localStorage.setItem('passwordHash',    passwordHash);
           localStorage.setItem('credHash',        credHash);
           localStorage.setItem('identifier',      data.identifier);
+          localStorage.setItem('userId',          data.userId);
           localStorage.setItem("nickname",        nickname);
-          localStorage.setItem('identityPublicKey', identityKey.publicKey);
           localStorage.setItem('token',           data.token);
-
+          
+          
           message.success('Регистрация успешна');
           //console.log('🎉 Регистрация успешна');
           const token = data.token;
-          socket.emit('identify', { identifier, usernameHash, token });
+          socketManager.emit('identify', { identifier, usernameHash, token });
           setIsAuthenticated(true); // переход в MainPage
-          onSuccess(); // вызов колбэка после успешной регистрации
+        onSuccess(); // вызов колбэка после успешной регистрации
+        navigate('/'); // переход на главную страницу после регистрации
       }
 
     } catch (error) {
@@ -170,8 +183,19 @@ const AuthPage = ({ onSuccess = () => {} }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: usernameHash, password: passwordHash })
       });
-
-      const data = await res.json();
+      
+      if (res.status === 429) {
+        message.error('Слишком много попыток входа. Попробуйте позже.');
+        return;
+      }
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonError) {
+        message.error('Ошибка при обработке ответа сервера (невалидный JSON).');
+        return;
+      }
       const { token, userId, identifier, nickname } = data;
       //console.log('💾 data = await res.json(); после авторизации):', { token, usernameHash, passwordHash, credHash, identifier, userId, nickname });
 
@@ -189,16 +213,18 @@ const AuthPage = ({ onSuccess = () => {} }) => {
         if (encryptedSignedPreKey) {
           localStorage.setItem('signedPrePrivateKey', JSON.stringify(encryptedSignedPreKey));
         }
-
-        if (!encryptedIdentity || !encryptedSignedPreKey) {
-          throw new Error('Некоторые зашифрованные ключи не найдены');
+        if (!encryptedIdentity) {
+          console.warn('identityPrivateKey не найден в IndexedDB');
+        }
+        if (!encryptedSignedPreKey) {
+          console.warn('signedPrePrivateKey не найден в IndexedDB');
         }
   
         const identityPrivateKey = await KeyCryptoManager.decryptPrivateKey(encryptedIdentity,     credHash);
         const signedPreKeyPriv   = await KeyCryptoManager.decryptPrivateKey(encryptedSignedPreKey, credHash);       
 
-         console.log('✅ Расшифрованный identityPrivateKey:', identityPrivateKey);
-         console.log('✅ Расшифрованный signedPreKeyPriv:', signedPreKeyPriv);
+        //  console.log('✅ Расшифрованный identityPrivateKey:', identityPrivateKey);
+        //  console.log('✅ Расшифрованный signedPreKeyPriv:', signedPreKeyPriv);
 
 
         const oneTimePreKeys = [];
@@ -217,7 +243,7 @@ const AuthPage = ({ onSuccess = () => {} }) => {
           oneTimePreKeys.push({ keyId: key, privateKey, publicKey });
         }
           console.log(`🔐 Загружено одноразовых ключей: ${oneTimePreKeys.length}`);
-      console.log('🔓 Ключи успешно расшифрованы при входе');
+          console.log('🔓 Ключи успешно расшифрованы при входе');
       
       localStorage.setItem('nickname',          nickname);
       localStorage.setItem('usernameHash',      usernameHash);
@@ -225,15 +251,15 @@ const AuthPage = ({ onSuccess = () => {} }) => {
       localStorage.setItem('credHash',          credHash);
       localStorage.setItem('identifier',        identifier);
       localStorage.setItem('token',             token);
-      localStorage.setItem('userid',            userId);
+      localStorage.setItem('userId',            userId);
       
       
-      socket.emit('identify', { identifier, usernameHash, token });
+      socketManager.emit('identify', { identifier, usernameHash, token });
       console.log('📡 Первичный identify после авторизации');
-      setTimeout(() => {
-        socket.emit('identify', { identifier, usernameHash, token });
-        console.log('📡 Повторный identify через 1с после авторизации');
-      }, 1000);
+      // setTimeout(() => {
+      //   socketManager.emit('identify', { identifier, usernameHash, token });
+      //   console.log('📡 Повторный identify через 1с после авторизации');
+      // }, 1000);
       setIsAuthenticated(true);
       onSuccess(); // вызов колбэка после успешного входа
         

@@ -1,4 +1,13 @@
-const baseURL = 'http://localhost:5001';
+// IndexedDB configuration
+export const DB_NAME        = 'PhantomDB';
+export const DB_VERSION     = 7;
+export const STORE_KEYS     = 'keys';
+export const STORE_MESSAGES = 'messages';
+export const STORE_HISTORY  = 'statusHistory';
+
+
+const baseURL = 'http://192.168.1.3:5001';
+//const baseURL = 'http://localhost:5001';
 
 export const API = {
   baseURL,
@@ -23,3 +32,4 @@ export const API = {
   clearConversationURL:     `${baseURL}/api/message/clear`
 
 };
+

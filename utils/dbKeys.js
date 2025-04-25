@@ -1,7 +1,6 @@
 // utils/dbKeys.js
-const DB_NAME = 'PhantomDB';
-const DB_VERSION = 2;
-const STORE_NAME = 'keys';
+
+import { DB_NAME, DB_VERSION, STORE_KEYS, STORE_MESSAGES, STORE_HISTORY} from '../src/config.js';
 
 class KeyDBManager {
 
@@ -15,13 +14,19 @@ class KeyDBManager {
   async openDB() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: 'keyName' });
+      request.onupgradeneeded = event => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_MESSAGES)) {
+          db.createObjectStore(STORE_MESSAGES, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(STORE_HISTORY)) {
+          db.createObjectStore(STORE_HISTORY, { autoIncrement: true });
+        }
+        if (!db.objectStoreNames.contains(STORE_KEYS)) {
+          db.createObjectStore(STORE_KEYS, { keyPath: 'keyName' });
         }
       };
+
 
       request.onsuccess = () => {
         console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] Открыта база данных ${DB_NAME}`);
@@ -39,8 +44,8 @@ class KeyDBManager {
   async loadEncryptedKey(keyName) {
     return new Promise(async (resolve, reject) => {
       const db = await this.getDB();
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(STORE_KEYS, 'readonly');
+      const store = tx.objectStore(STORE_KEYS);
       const request = store.get(keyName);
       request.onsuccess = () => {
            const result = request.result;
@@ -66,13 +71,11 @@ class KeyDBManager {
 
 // ✅ Сохраняет набор ключей (по отдельности)
 async saveEncryptedKey(keyName, encryptedKey) {
-  
-  console.log("saveEncryptedKey ▶️", keyName);
-  
+    
   try {
     const db = await this.getDB();
-    const transaction = db.transaction(STORE_NAME, 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
+    const transaction = db.transaction(STORE_KEYS, 'readwrite');
+    const store = transaction.objectStore(STORE_KEYS);
 
     const entry = { keyName, ...encryptedKey }; // ключ и содержимое
 
@@ -97,8 +100,8 @@ async saveEncryptedKey(keyName, encryptedKey) {
 async  deleteAllEncryptedKeys() {
   try {
     const db = await this.getDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    await tx.objectStore(STORE_NAME).clear();
+    const tx = db.transaction(STORE_KEYS, 'readwrite');
+    await tx.objectStore(STORE_KEYS).clear();
     console.log('🗑️ Все зашифрованные ключи удалены');
   } catch (error) {
     console.error('❌ Ошибка удаления зашифрованных ключей:', error);
@@ -113,47 +116,3 @@ export { keyDBInstance as KeyDBManager };
 export const saveEncryptedKey   = keyDBInstance.saveEncryptedKey.bind(keyDBInstance);
 export const loadEncryptedKey   = keyDBInstance.loadEncryptedKey.bind(keyDBInstance);
 export const saveKeyToIndexedDB = keyDBInstance.saveEncryptedKey.bind(keyDBInstance);
-
-
-  // async saveKeyToIndexedDB(keyName, encryptedKeyObject) {
-  //   const db = await this.openDB();
-  //   return new Promise((resolve, reject) => {
-  //     const tx = db.transaction(STORE_NAME, 'readwrite');
-  //     const store = tx.objectStore(STORE_NAME);
-  //     const request = store.put({ keyName, data: encryptedKeyObject });
-
-  //     request.onsuccess = () => {
-  //       console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] Ключ '${keyName}' сохранён в IndexedDB`);
-  //       resolve(true);
-  //     };
-
-  //     request.onerror = () => {
-  //       console.error(`[ERROR] [${new Date().toISOString()}] [IP: unknown] Ошибка при сохранении ключа '${keyName}': ${request.error}`);
-  //       reject(request.error);
-  //     };
-  //   });
-  // }
-
-  // async getKeyFromIndexedDB(keyName) {
-  //   const db = await this.openDB();
-  //   return new Promise((resolve, reject) => {
-  //     const tx = db.transaction(STORE_NAME, 'readonly');
-  //     const store = tx.objectStore(STORE_NAME);
-  //     const request = store.get(keyName);
-
-  //     request.onsuccess = () => {
-  //       if (request.result) {
-  //         console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] Ключ '${keyName}' успешно извлечён из IndexedDB`);
-  //         resolve(request.result.data);
-  //       } else {
-  //         console.warn(`[WARN] [${new Date().toISOString()}] [IP: unknown] Ключ '${keyName}' не найден`);
-  //         reject(new Error('Key not found'));
-  //       }
-  //     };
-
-  //     request.onerror = () => {
-  //       console.error(`[ERROR] [${new Date().toISOString()}] [IP: unknown] Ошибка при извлечении ключа '${keyName}': ${request.error}`);
-  //       reject(request.error);
-  //     };
-  //   });
-  // }

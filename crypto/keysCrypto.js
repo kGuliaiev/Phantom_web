@@ -132,7 +132,7 @@ import { cryptoManager } from './CryptoManager';
       // Формируем PEM-формат с правильными заголовками и разбивкой строк по 64 символа
       const lines = decryptedBase64.match(/.{1,64}/g) || [];
       const pem = `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
-      console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Успешно расшифрованный ключ в PEM`);
+      //console.log(`[LOG] [${new Date().toISOString()}] [IP: unknown] [keysCrypto.js] Успешно расшифрованный ключ в PEM`);
       return pem;
 
     } catch (error) {

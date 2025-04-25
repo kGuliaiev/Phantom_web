@@ -6,6 +6,13 @@ class CryptoManager {
     //console.log(`[CryptoManager][${now}] ${message}`);
   }
   
+  // вне класса
+  arrayBufferToPEM(buffer, label) {
+  const base64 = window.btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  const formatted = base64.match(/.{1,64}/g).join('\n');
+  return `-----BEGIN ${label}-----\n${formatted}\n-----END ${label}-----`;
+}
+
   async decryptDataFromKeyStorage({ encrypted, iv }) {
     try {
       const passwordHash = localStorage.getItem('credHash');
@@ -267,7 +274,7 @@ class CryptoManager {
         encrypted
       );
 
-      console.log('🔓 Расшифрованное сообщение:', decrypted);
+      //console.log('🔓 Расшифрованное сообщение:', decrypted);
       return new TextDecoder().decode(decrypted);
     } catch (error) {
       this._log(`❌ Ошибка decryptData: ${error.message}`);
@@ -287,8 +294,8 @@ class CryptoManager {
     const encryptedData = Uint8Array.from(atob(sanitized), c => c.charCodeAt(0));
 
       // Ensure iv and encrypted are extracted only once to avoid duplication
-      const iv = encryptedData.slice(0, 12);
-      const encrypted = encryptedData.slice(12);
+      let iv = encryptedData.slice(0, 12);
+      let encrypted = encryptedData.slice(12);
 
       const publicKey = receiverPublicKeyBase64 || localStorage.getItem('lastPublicKey');
       if (!publicKey) {
@@ -541,6 +548,8 @@ class CryptoManager {
 }
 
 export const cryptoManager = new CryptoManager();
+
+
 
 
 function logCryptoEvent(message, req = null, error = null) {

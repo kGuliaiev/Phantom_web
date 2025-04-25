@@ -1,525 +1,322 @@
-import { saveMessage, getMessagesByReceiverId, deleteMessageById, clearAllMessages, clearAllMessagesForContact  } from '../utils/dbMessages';
-import dayjs from 'dayjs';
-import 'dayjs/locale/ru';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import isToday from 'dayjs/plugin/isToday';
-import isYesterday from 'dayjs/plugin/isYesterday';
-import weekday from 'dayjs/plugin/weekday';
-import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
-import { API } from '../src/config';
-import { logEvent } from '../utils/logger';
-import { Modal } from 'antd';
-
-
-
-
-
-
-dayjs.extend(relativeTime);
-dayjs.extend(isToday);
-dayjs.extend(isYesterday);
-dayjs.extend(weekday);
-dayjs.extend(isSameOrAfter);
-dayjs.locale('ru');
-
-import React, { useEffect, useState, useRef } from 'react';
-import axios from 'axios';
-import { Input, Button, List, message as antdMessage, Tooltip } from 'antd';
-import { SendOutlined, CheckOutlined } from '@ant-design/icons';
+// src/components/Messages.jsx
+import React, { useState, useEffect, useRef } from 'react';
+import { List, Tooltip, Input, Button, Space, Switch, Modal } from 'antd';
+import { DeleteOutlined, ArrowRightOutlined, EnterOutlined } from '@ant-design/icons';
+import socketManager from '../src/socketManager';
+import {
+  saveMessage,
+  getMessagesByReceiverId,
+  updateMessageStatusRecord,
+  saveStatusHistory,
+  getStatusHistory,
+  clearAllMessagesForContact
+} from '../utils/dbMessages';
 import { cryptoManager } from '../crypto/CryptoManager';
+import axios from 'axios';
+import { API } from '../src/config';
+import { v4 as uuidv4 } from 'uuid';
 
-import socket from '../src/socket';
+// helper to show status as emoji
+const getStatusEmoji = status => {
+  switch (status) {
+    case 'pending':   return '🕓';
+    case 'sent':      return '📤';
+    case 'delivered': return '📨';
+    case 'seen':      return '👀';
+    default:          return '❌';
+  }
+};
 
-const { TextArea } = Input;
+const HIGHLIGHT_DURATION = 2000;
 
-const Messages = ({ selectedChat, identifier, nickname, onlineUsers }) => {
-  const formatTimestamp = (timestamp) => {
-    const d = dayjs(timestamp);
-    const now = dayjs();
-    if (d.isToday()) {
-      return d.format('HH:mm');
-    }
-    if (d.isYesterday()) {
-      return `вчера в ${d.format('HH:mm')}`;
-    }
-    if (d.isSame(now, 'week')) {
-      return `${d.format('dddd')} в ${d.format('HH:mm')}`;
-    }
-    if (d.year() === now.year()) {
-      return `${d.format('D MMMM')} в ${d.format('HH:mm')}`;
-    }
-    return `${d.format('DD.MM.YY')} в ${d.format('HH:mm')}`;
-  };
-
-  
-  const [messageValue, setMessageValue] = useState('');
-  const [messages, setMessages] = useState([]);
+export function Messages({ selectedChat, onMessagesUpdate }) {
+  const [messages, setMessages]       = useState([]);
+  const [highlighted, setHighlighted] = useState({});
+  const [inputValue, setInputValue]   = useState('');
+  const userId                        = localStorage.getItem('identifier');
+  const chatRef                       = useRef(selectedChat);
+  const listContainerRef              = useRef();
   const [sendOnEnter, setSendOnEnter] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [noMessages, setNoMessages] = useState(false);
-  const messagesEndRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+
+  // Format status timestamps: today => "HH:MM:SS", yesterday => "HH:MM:SS вчера", else "HH:MM:SS DD.MM.YYYY"
+  const formatStatusTimestamp = isoString => {
+    const dt = new Date(isoString);
+    const now = new Date();
+    const dtMid = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    const nowMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((nowMid - dtMid) / 86400000);
+    const time = dt.toTimeString().substr(0, 8);
+    if (diffDays === 0) return time;
+    if (diffDays === 1) return `${time} вчера`;
+    const date = dt.toLocaleDateString('ru-RU');
+    return `${time} ${date}`;
   };
 
-  useEffect(scrollToBottom, [messages]);
-
-  useEffect(() => {
-    const messagesContainer = document.querySelector('.message-list');
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (!selectedChat) return;
-
-    const loadMessages = async () => {
-      try {
-        setLoading(true);
-        const localMessages = await getMessagesByReceiverId(selectedChat.contactId);
-        setMessages(localMessages);
-        setNoMessages(localMessages.length === 0);
-      } catch (error) {
-        console.error('❌ Ошибка загрузки сообщений:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadMessages();
-
-
-      // const handleClearChat = async () => {
-      //   try {
-      //     // 1. Очистить локальное хранилище сообщений для текущей переписки
-      //     await clearAllMessages();
-      //     setMessages([]);
-    
-      //     // 2. Отправить команду на сервер для удаления всей переписки
-      //     const token = localStorage.getItem('token');
-      //     const res = await fetch(`${API.clearConversationURL}?contactId=${selectedChat.contactId}`, {
-      //       method: 'DELETE',
-      //       headers: { 'Authorization': `Bearer ${token}` }
-      //     });
-      //     if (!res.ok) {
-      //       throw new Error('Ошибка при удалении переписки на сервере');
-      //     }
-    
-      //     // 3. Эмитировать событие по сокету для второго абонента: команда очистить локальные сообщения
-      //     socket.emit('clearChat',{ contactId: selectedChat.contactId, senderId: identifier });
-    
-      //     antdMessage.success('Переписка успешно удалена');
-      //   } catch (error) {
-      //     console.error('Ошибка при очистке переписки:', error);
-      //     antdMessage.error(`Ошибка очистки: ${error.message}`);
-      //   }
-      // };
-
-
-    const fetchAndUpdateMessages = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API.receiveMessagesURL}?receiverId=${identifier}`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`
+  function StatusHistory({ id }) {
+    const [history, setHistory] = useState([]);
+    useEffect(() => {
+      getStatusHistory(id).then(entries => {
+        // Deduplicate by status, keeping the latest updatedAt for each status in order
+        const order = ['pending', 'sent', 'delivered', 'seen'];
+        const uniqueEntries = [];
+        for (const status of order) {
+          // Find all entries for this status
+          const candidates = entries.filter(e => e.status === status);
+          if (candidates.length > 0) {
+            // Pick the one with the latest updatedAt
+            const latest = candidates.reduce((a, b) =>
+              new Date(a.updatedAt) > new Date(b.updatedAt) ? a : b
+            );
+            uniqueEntries.push(latest);
           }
-        });
-
-        if (!res.ok) throw new Error('Ошибка получения сообщений с сервера');
-
-        const data = await res.json();
-        console.log('📡 Получены новые сообщения с сервера:', data);
-
-        for (const msg of data) {
-          let decryptedText = '[Ошибка расшифровки]';
-          try {
-            decryptedText = await cryptoManager.decryptMessage(msg.encryptedContent, selectedChat?.publicKey);
-          } catch (e) {
-            console.warn('❌ Ошибка расшифровки сообщения:', e);
-          }
-
-          await saveMessage({
-            id: msg.messageId,
-            senderId: msg.senderId,
-            receiverId: msg.receiverId,
-            text: decryptedText,
-            encrypted: msg.encryptedContent,
-            timestamp: msg.timestamp,
-            status: msg.recipients?.find(r => r.userId === identifier)?.status || 'sent'
-          });
         }
-
-        const updatedMessages = await getMessagesByReceiverId(selectedChat.contactId);
-        setMessages(updatedMessages);
-        setNoMessages(updatedMessages.length === 0);
-      } catch (err) {
-        console.error('❌ Ошибка при обновлении сообщений с сервера:', err);
-      }
-    };
-    fetchAndUpdateMessages();
-
-    const handleMessage = async (message) => {
-      try {
-        console.log('📨 handleMessage получил сообщение:', message);
-        //const { senderId, encryptedContent, messageId, timestamp } = message;
-        const { sender, encrypted, messageId, timestamp } = message;
-        const senderId = sender;
-        if (!selectedChat?.publicKey) {
-          console.warn("⚠️ Публичный ключ не передан или некорректен", selectedChat?.publicKey);
-          return;
-        }
-        await cryptoManager.importReceiverKey(selectedChat.publicKey);
-        const decryptedText = await cryptoManager.decryptMessage(encrypted, selectedChat?.publicKey);
-
-        logEvent('message_received', {
-          from: senderId,
-          messageId,
-          timestamp
-        });
-
-        const newMsg = {
-          id: messageId,
-          senderId: senderId,
-          receiverId: identifier,
-          text: decryptedText,
-          encrypted, //: encryptedContent,
-          timestamp,
-          status: 'delivered'
-        };
-
-        await saveMessage(newMsg);
-        if (Notification.permission === 'granted') {
-          new Notification('Новое сообщение', {
-            body: decryptedText,
-            tag: messageId
-          });
-        } else if (Notification.permission !== 'denied') {
-          Notification.requestPermission().then(permission => {
-            if (permission === 'granted') {
-              new Notification('Новое сообщение', {
-                body: decryptedText,
-                tag: messageId
-              });
-            }
-          });
-        }
-        setMessages(prev => {
-          const exists = prev.find(m => m.id === messageId);
-          return exists ? prev : [...prev, newMsg];
-        });
-
-        notification.open({
-          message: 'Новое сообщение от ',
-          description: decryptedText,
-          duration: 3,
-        });
-
-        if (!document.hasFocus()) {
-          new Notification('Новое сообщение от', {
-            body: senderId,
-            tag: decryptedText
-          });
-        }
-
-        // Перемещаем вызов в самый конец функции, чтобы событие отправлялось после отображения сообщения
-        socket.emit('messageRead', { messageId });
-      } catch (err) {
-        console.error("Ошибка расшифровки:", err);
-      }
-    };
-
-    socket.on('message', handleMessage);
-
-       socket.on('chatCleared', async ({ contactId, clearedBy }) => {
-          if (selectedChat && contactId === selectedChat.contactId) {
-            try {
-              // Очистить локально сообщения между текущим пользователем и данным собеседником
-              await clearAllMessagesForContact(identifier, contactId);
-              setMessages([]);
-              antdMessage.info('Собеседник удалил переписку');
-    
-              // Отправляем подтверждение инициатору удаления
-              socket.emit('chatClearedAck', { contactId, clearedBy, from: identifier });
-            } catch (error) {
-              console.error('Ошибка при очистке переписки локально:', error);
-            }
-          }
-        });
-    
-
-        socket.on('messageDelivered', ({ messageId }) => {
-          setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg.id === messageId ? { ...msg, status: 'delivered' } : msg
-            )
-          );
-          // Временно выводим уведомление на клиенте и логируем в консоль
-          antdMessage.info(`Статус сообщения ${messageId} изменен на "delivered" (API: ${API.sendMessageURL})`);
-          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до delivered, получено через API: ${API.sendMessageURL}`);
-        });
-  
-        // Обработчик изменения статуса: сообщение получено
-        socket.on('messageReceived', ({ messageId }) => {
-          setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg.id === messageId ? { ...msg, status: 'received' } : msg
-            )
-          );
-          // Временно выводим уведомление на клиенте и логируем в консоль
-          antdMessage.info(`Статус сообщения ${messageId} изменен на "received" (API: ${API.receiveMessagesURL})`);
-          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до received, получено через API: ${API.receiveMessagesURL}`);
-        });
-  
-        // Обработчик изменения статуса: сообщение прочитано
-        socket.on('messageRead', ({ messageId }) => {
-          setMessages((prevMessages) =>
-            prevMessages.map((msg) =>
-              msg.id === messageId ? { ...msg, status: 'read' } : msg
-            )
-          );
-          // Временно выводим уведомление на клиенте и логируем в консоль
-          antdMessage.info(`Статус сообщения ${messageId} изменен на "read" (API: ${API.sendMessageURL})`);
-          console.log(`DEBUG: Сообщение ${messageId} статус обновлен до read, обновлено через API: ${API.sendMessageURL}`);
-        });
-    
-    return () => {
-      socket.off('message', handleMessage);
-      socket.off('messageDelivered');
-      socket.off('messageRead');
-      socket.off('chatCleared');
-    };
-  }, [selectedChat]);
-
-  const handleSend = async () => {
-    if (!messageValue.trim() || !selectedChat?.publicKey) return;
-
-    if (!selectedChat.publicKey || selectedChat.publicKey.length < 50) {
-      console.warn("⚠️ Некорректный публичный ключ получателя");
-      return antdMessage.error("Некорректный ключ шифрования");
-    }
-
-    localStorage.setItem('lastPublicKey', selectedChat.publicKey);
-
-    if (crypto && crypto.generateSharedKeyIfNeeded) {
-      try {
-        await crypto.generateSharedKeyIfNeeded(selectedChat.contactId, selectedChat.publicKey);
-      } catch (err) {
-        console.warn('⚠️ Ошибка при генерации ключа:', err);
-        return antdMessage.error("Ошибка при подготовке ключа");
-      }
-    }
-
-    try {
-      const encrypted = await cryptoManager.encryptMessage(messageValue, selectedChat.publicKey);
-      const timestamp = Date.now();
-      const senderId = localStorage.getItem('identifier');
-
-      setMessages(prev => [...prev, { sender: senderId, text: messageValue, timestamp, status: 'sent' }]);
-      await saveMessage({
-        id: timestamp,
-        sender: senderId,
-        receiver: selectedChat.contactId,
-        encrypted,
-        text: messageValue,
-        timestamp,
-        status: 'sent'
+        setHistory(uniqueEntries);
       });
-
-      const payload = {
-        senderId,
-        receiverId: selectedChat.contactId,
-        chatId: selectedChat.chatId || `${identifier}_${selectedChat.contactId}`,
-        encryptedContent: encrypted,
-        iv: btoa(encrypted.slice(0, 12))
-      };
-      console.log('📤 Отправка сообщения на сервер:', payload);
-
-      logEvent('message_sent', {
-        to: selectedChat.contactId,
-        contentLength: messageValue.length,
-        timestamp: Date.now()
-      });
-
-      const token = localStorage.getItem('token');
-      const response = await axios.post(API.sendMessageURL, {
-        senderId: localStorage.getItem('identifier'),
-        receiverId: selectedChat.contactId,
-        chatId: selectedChat.chatId || 'default',
-        encryptedContent: encrypted,
-        iv: btoa(encrypted.slice(0, 12))
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-      });
-
-      if (response.status === 200 && response.data?.newMessage?.messageId) {
-        await updateMessageStatus(timestamp, 'server');
-
-        socket.emit('message', {
-          to: selectedChat.contactId,
-          encrypted,
-          timestamp,
-          messageId: response.data.newMessage.messageId
-        });
-      }
-
-      setMessageValue('');
-    } catch (err) {
-      console.error('Ошибка при отправке:', err);
-      antdMessage.error('Не удалось отправить сообщение');
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && sendOnEnter) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  if (!selectedChat) {
-    return <div style={{ padding: 20 }}>Выберите контакт, чтобы начать переписку</div>;
+    }, [id]);
+    return (
+      <div style={{ minWidth: 100 }}>
+        {history.map(item => (
+          <div key={item.status} style={{ marginBottom: 4 }}>
+            <span>{getStatusEmoji(item.status)}</span>
+            <strong style={{ marginLeft: 4 }}>{item.status}</strong> @ {formatStatusTimestamp(item.updatedAt)}
+          </div>
+        ))}
+      </div>
+    );
   }
 
+
+  // 1. Load history and mark seen
+  useEffect(() => {
+    if (!selectedChat) return;
+    chatRef.current = selectedChat;
+    (async () => {
+      const raw = await getMessagesByReceiverId(selectedChat.contactId, userId);
+      const decrypted = await Promise.all(
+        raw.sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp))
+           .map(async msg => {
+             let text='';
+             try {
+               await cryptoManager.importReceiverKey(selectedChat.publicKey);
+               text = await cryptoManager.decryptMessage(msg.encrypted, selectedChat.publicKey);
+             } catch {}
+             return {...msg, text};
+           })
+      );
+      // highlight and mark seen
+      for (let msg of decrypted) {
+        if (msg.senderId===selectedChat.contactId && msg.status==='delivered') {
+          setHighlighted(h=>({...h,[msg.id]:true}));
+          setTimeout(async ()=>{
+            setHighlighted(h=>{const c={...h};delete c[msg.id];return c;});
+            const now=new Date().toISOString();
+            await updateMessageStatusRecord(msg.id,'seen',now);
+            await saveStatusHistory({messageId:msg.id,status:'seen',updatedAt:now});
+
+            socketManager.emit('messageAttributeChanged',{messageId:msg.id,attribute:'status',value:'seen',sender:userId,receiver:selectedChat.contactId});
+            setMessages(curr=>curr.map(x=>x.id===msg.id?{...x,status:'seen'}:x));
+            onMessagesUpdate?.();
+          }, HIGHLIGHT_DURATION);
+        }
+      }
+      setMessages(decrypted);
+      
+      // scroll bottom
+      setTimeout(()=>listContainerRef.current?.scrollTo(0,listContainerRef.current.scrollHeight),0);
+    })();
+  }, [selectedChat, userId]);
+
+  // 2. Incoming socket
+  useEffect(()=>{
+    const onMessage = async ({ sender, receiver, encrypted, iv, timestamp, messageId })=>{
+      const isActive = chatRef.current?.contactId===sender;
+      await saveMessage({ id: messageId, senderId: sender, receiverId: userId, encrypted, iv, timestamp, status:'delivered' });
+      socketManager.emit('messageAttributeChanged',{messageId,attribute:'status',value:'delivered',sender:userId,receiver:sender});
+      if (!isActive) {
+        onMessagesUpdate?.();
+        return;
+      }
+      let text='';
+      try {
+        await cryptoManager.importReceiverKey(chatRef.current.publicKey);
+        text = await cryptoManager.decryptMessage(encrypted, chatRef.current.publicKey);
+      } catch {}
+      const newMsg={id:messageId,senderId:sender,receiverId:userId,encrypted,iv,timestamp,status:'delivered',text};
+      setMessages(m=>[...m,newMsg]);
+      onMessagesUpdate?.();
+      setHighlighted(h=>({...h,[messageId]:true}));
+      setTimeout(async ()=>{
+        setHighlighted(h=>{const c={...h};delete c[messageId];return c;});
+        const now=new Date().toISOString();
+        await updateMessageStatusRecord(messageId,'seen',now);
+        await saveStatusHistory({messageId,status:'seen',updatedAt:now});
+        socketManager.emit('messageAttributeChanged',{messageId,attribute:'status',value:'seen',sender:userId,receiver:sender});
+        setMessages(prev=>prev.map(x=>x.id===messageId?{...x,status:'seen'}:x));
+        onMessagesUpdate?.();
+      },HIGHLIGHT_DURATION);
+      setTimeout(()=>listContainerRef.current?.scrollTo(0,listContainerRef.current.scrollHeight),0);
+    };
+    socketManager.on('message',onMessage);
+    return ()=>socketManager.off('message',onMessage);
+  },[userId,onMessagesUpdate]);
+
+  // 3. Status ACKs
+  useEffect(()=>{
+    const onStatus=async ({messageId,value})=>{
+      setMessages(m=>m.map(x=>x.id===messageId?{...x,status:value}:x));
+      const now=new Date().toISOString();
+      await updateMessageStatusRecord(messageId,value,now);
+      await saveStatusHistory({messageId,status:value,updatedAt:now});
+      onMessagesUpdate?.();
+    };
+    socketManager.on('messageAttributeChanged',onStatus);
+    return ()=>socketManager.off('messageAttributeChanged',onStatus);
+  },[onMessagesUpdate]);
+
+  // 3a. Listen for remote chat clear
+  useEffect(() => {
+    const onChatClearRemote = ({ contactId }) => {
+      // Only clear if the current chat matches
+      if (chatRef.current && chatRef.current.contactId === contactId) {
+        setMessages([]);
+        onMessagesUpdate?.();
+      }
+    };
+    socketManager.on('chatClearRemote', onChatClearRemote);
+    return () => socketManager.off('chatClearRemote', onChatClearRemote);
+  }, [onMessagesUpdate]);
+
+  // 4. Send message
+  const sendMessage = async ()=>{
+    if(!inputValue.trim()||!selectedChat) return;
+    const text=inputValue.trim(), messageId=uuidv4(), timestamp=new Date().toISOString();
+    let encrypted, iv;
+    try {
+      const res=await cryptoManager.encryptMessage(text,selectedChat.publicKey);
+      encrypted=res.encrypted||res; iv=res.iv||btoa(encrypted.slice(0,12));
+    }catch{return;}
+    const local={id:messageId,senderId:userId,receiverId:selectedChat.contactId,encrypted,iv,timestamp,status:'pending',text};
+    setMessages(m=>[...m,local]);
+    await saveMessage(local);
+    await saveStatusHistory({messageId,status:'pending',updatedAt:timestamp});
+    setInputValue('');
+    onMessagesUpdate?.();
+    setTimeout(()=>listContainerRef.current?.scrollTo(0,listContainerRef.current.scrollHeight),0);
+    try {
+      await axios.post(API.sendMessageURL,{messageId,senderId:userId,receiverId:selectedChat.contactId,chatId:'default',encryptedContent:encrypted,iv,timestamp},{headers:{Authorization:`Bearer ${localStorage.getItem('token')}`}}); 
+    }catch{}
+  };
+  const onKeyDown = e => {
+    if (sendOnEnter && e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+  // const clearChat=async()=>{await clearAllMessagesForContact(userId,selectedChat.contactId); setMessages([]); onMessagesUpdate?.();};
+    const clearChat = async () => {
+      try {
+        // Удаляем переписку на сервере
+        await axios.delete(API.clearConversationURL, {
+          params: { contactId: selectedChat.contactId },
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        });
+      } catch (err) {
+        console.error('Ошибка при удалении на сервере:', err);
+      }
+      // Чистим локальную базу
+      await clearAllMessagesForContact(userId, selectedChat.contactId);
+      setMessages([]);
+      onMessagesUpdate?.();
+    };
+
+    const handleClearChat = () => {
+      Modal.confirm({
+        title: 'Очистить переписку?',
+        content: 'Вы уверены, что хотите удалить все сообщения с этим контактом? Это действие необратимо.',
+        okText: 'Да, очистить',
+        cancelText: 'Отмена',
+        onOk: clearChat,
+      });
+    };
+
+  if(!selectedChat) return <div style={{padding:16}}>Выберите чат</div>;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Заголовок чата */}
-      <div style={{ padding: '8px 16px', fontWeight: 'bold', borderBottom: '1px solid #ddd' }}>
-        {selectedChat.nickname || selectedChat.contactId}
-      </div>
-  
-      {/* Список сообщений */}
+    <div style={{display:'flex', flexDirection:'column', height:'83vh', position:'relative'}}>
+      <Space style={{justifyContent:'flex-end',marginBottom:8}}>
+        <Button icon={<DeleteOutlined />} onClick={handleClearChat}>Очистить</Button>
+      </Space>
       <div
-        className="message-list"
-        style={{
-          flexGrow: 1,
-          overflowY: 'auto',
-          padding: '10px',
-          maxHeight: 'calc(100vh - 220px)'
-        }}
+        ref={listContainerRef}
+        style={{flex:1,overflowY:'auto',padding:8,background:'#fafafa',borderRadius:4}}
       >
-        {noMessages && (
-          <div className="no-messages">
-            <p>Нет сообщений</p>
-          </div>
-        )}
         <List
-          dataSource={[...messages].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))}
-          renderItem={(msg) => {
-            const isSent = msg.senderId === identifier;
-            // Классы для оформления: отправленные сообщения — серые (выравнивание вправо), полученные — синие (влево)
-            const bubbleClass = isSent ? 'message-bubble message-sent' : 'message-bubble message-received';
-            // Определяем эмодзи статуса для отправленных сообщений
-            let statusEmoji = '';
-            if (isSent) {
-              if (msg.status === 'sent') statusEmoji = '⏳'; // не отправлено на сервер
-              else if (msg.status === 'delivered') statusEmoji = '☑️'; // сервер получил
-              else if (msg.status === 'read') statusEmoji = '👀'; // просмотрено
-              else statusEmoji = '✅'; // получатель получил (или иной статус)
-            }
+          dataSource={messages}
+          renderItem={msg => {
+            const isSent=msg.senderId===userId;
             return (
-            <List.Item key={msg.id} style={{ display: 'flex', justifyContent: isSent ? 'flex-end' : 'flex-start' }}>
-              <div className={bubbleClass} style={{ display: 'flex', flexDirection: 'column', alignItems: isSent ? 'flex-end' : 'flex-start' }}>
-                <div>{msg.text}</div>
-                {isSent && <div className="message-status">{statusEmoji}</div>}
-                <div className="message-timestamp" style={{ fontSize: '0.75em', color: '#888', marginTop: 4 }}>
-                  {formatTimestamp(msg.timestamp)}
+              <div style={{marginBottom:8,display:'flex',justifyContent:isSent?'flex-end':'flex-start'}}>
+                <Tooltip title={<StatusHistory id={msg.id}/>} placement="top">
+                <div style={{
+                  background:isSent?'#e0e0e0':(highlighted[msg.id]?'#d2f8d2':'#b2d2f4'),
+                  padding:8,borderRadius:6,maxWidth:'75%'
+                }}>
+                  <div>{msg.text}</div>
+                  <div style={{fontSize:12,color:'#888',display:'flex',justifyContent:isSent?'flex-end':'flex-start'}}>
+                    <span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
+                    {isSent && (
+                      <span style={{marginLeft:4}}>
+                        {getStatusEmoji(msg.status)}
+                      </span>
+                    )}
+                  </div>
+                
                 </div>
+                </Tooltip>
               </div>
-            </List.Item>
             );
           }}
         />
-        <div ref={messagesEndRef} />
       </div>
-  
-      {/* Панель ввода сообщения */}
-      <div
-        style={{
+      <div style={{
           display: 'flex',
-          padding: 10,
+          padding: 8,
           borderTop: '1px solid #ddd',
           background: '#fff',
-          zIndex: 1,
-          marginTop: 'auto'
-        }}
-      >
-        <TextArea
-          autoSize={{ minRows: 1, maxRows: 4 }}
-          value={messageValue}
-          onChange={(e) => setMessageValue(e.target.value)}
-          onKeyDown={handleKeyDown}
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 10
+      }}>
+        <Input.TextArea
+          value={inputValue}
+          onChange={e=>setInputValue(e.target.value)}
+          onKeyDown={onKeyDown}
+          autoSize={{minRows:2,maxRows:6}}
           placeholder="Введите сообщение..."
-          style={{ marginRight: 8 }}
         />
-        <Tooltip title={`Enter для отправки: ${sendOnEnter ? 'вкл' : 'выкл'}`}>
-          <Button icon={<CheckOutlined />} onClick={() => setSendOnEnter(prev => !prev)} style={{ marginRight: 8 }} />
-        </Tooltip>
-        <Button icon={<SendOutlined />} type="primary" onClick={handleSend} />
+      <div style={{display:'flex', flexDirection:'column', marginLeft:8}}>
         <Button
-          danger
-          type="default"
-          onClick={async () => {
-            Modal.confirm({
-              title: 'Удалить все сообщения?',
-              content: 'Вы уверены, что хотите удалить всю переписку с этим пользователем? Это действие необратимо.',
-              okText: 'Удалить',
-              cancelText: 'Отмена',
-              onOk: async () => {
-                try {
-                  // 1. Удаляем локально все сообщения текущей переписки
-                  await clearAllMessages(selectedChat.contactId);
-                  setMessages([]);
-                  setNoMessages(true);
-                  // 2. Отправляем запрос на сервер для удаления переписки между пользователями
-                  const token = localStorage.getItem('token');
-                  const res = await fetch(`${API.clearConversationURL}?contactId=${selectedChat.contactId}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                  });
-                  if (!res.ok) {
-                    throw new Error('Ошибка при удалении переписки на сервере');
-                  }
-                  // 3. Отправляем через сокет команду второму абоненту очистить локальные сообщения
-                  socket.emit('clearChat', { contactId: selectedChat.contactId, senderId: identifier });
-                  antdMessage.success('Переписка успешно удалена');
-                } catch (error) {
-                  console.error('Ошибка при очистке переписки:', error);
-                  antdMessage.error(`Ошибка очистки: ${error.message}`);
-                }
-              }
-            });
+          type="primary"
+          onClick={sendMessage}
+          style={{
+            marginBottom: 4,
+            backgroundColor: '#52c41a',
+            borderColor: '#52c41a'
           }}
-          style={{ marginLeft: 8 }}
         >
-          Очистить
+          Отправить <ArrowRightOutlined />
         </Button>
+        <div style={{display:'flex', alignItems:'center'}}>
+          <Switch
+            checked={sendOnEnter}
+            onChange={checked => setSendOnEnter(checked)}
+          />
+          <EnterOutlined style={{ marginLeft: 8, fontSize: '16px', color: '#1890ff' }} />
+          <span style={{ marginLeft: 4 }}>Enter</span>
+        </div>
+      </div>
       </div>
     </div>
   );
-};
-
-const updateMessageStatus = async (timestamp, newStatus) => {
-  const dbOpenRequest = indexedDB.open('SecureMessengerDB', 1);
-  const db = await new Promise((resolve, reject) => {
-    dbOpenRequest.onsuccess = () => resolve(dbOpenRequest.result);
-    dbOpenRequest.onerror = () => reject(dbOpenRequest.error);
-  });
-  const tx = db.transaction('messages', 'readwrite');
-  const store = tx.objectStore('messages');
-  const req = store.get(timestamp);
-  req.onsuccess = () => {
-    const msg = req.result;
-    if (msg) {
-      msg.status = newStatus;
-      store.put(msg);
-      console.log(`🔄 Статус сообщения [${timestamp}] обновлён на ${newStatus}`);
-    }
-  };
-};
-
-export { Messages };
+}

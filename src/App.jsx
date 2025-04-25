@@ -25,7 +25,7 @@ const App = () => {
     const userId        = localStorage.getItem('userId');
     const nickname      = localStorage.getItem('nickname');
 
-    console.log('💾 localStorage при старте (APP.jsx):', { token, usernameHash, passwordHash, credHash, identifier, userId, nickname });
+    //console.log('💾 localStorage при старте (APP.jsx):', { token, usernameHash, passwordHash, credHash, identifier, userId, nickname });
 
     const validate = async () => {
       if (token && usernameHash && passwordHash && identifier) {
